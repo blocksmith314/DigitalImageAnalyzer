@@ -14,10 +14,11 @@ std::string H264SPS::profileName() const {
     }
 }
 
-bool parseH264SPS(const std::vector<uint8_t> &nalData, H264SPS &out) {
-    if (nalData.size() < 4) return false;
+bool parseH264SPS(const NALUnit &nal, H264SPS &out) {
+    if (nal.data.size() < nal.startCodeLen + 2) return false;
 
-    BitReader br(nalData.data() + 1, nalData.size() - 1);
+    size_t rbspOffset = nal.startCodeLen + 1;
+    BitReader br(nal.data.data() + rbspOffset, nal.data.size() - rbspOffset);
 
     out.profile_idc = (uint8_t)br.readBits(8);
     out.constraint_set0_flag = br.readBit();
@@ -34,6 +35,17 @@ bool parseH264SPS(const std::vector<uint8_t> &nalData, H264SPS &out) {
         if (chroma_format == 3) br.readBits(1);
         br.readUe();
         br.readUe();
+        br.readBits(1);
+        bool scalingPresent = br.readBits(1) != 0;
+        if (scalingPresent) {
+            int numLists = (chroma_format != 3) ? 8 : 12;
+            for (int i = 0; i < numLists; i++) {
+                if (br.readBits(1)) {
+                    int size = (i < 6) ? 16 : 64;
+                    for (int j = 0; j < size; j++) br.readUe();
+                }
+            }
+        }
     }
 
     out.log2_max_frame_num_minus4 = (uint32_t)br.readUe();
@@ -53,12 +65,15 @@ bool parseH264SPS(const std::vector<uint8_t> &nalData, H264SPS &out) {
 
     out.max_num_ref_frames = (uint32_t)br.readUe();
     br.readBits(1);
-    uint32_t log2_minus8 = (uint32_t)br.readUe();
     uint32_t widthInMbs = (uint32_t)br.readUe();
     uint32_t heightInMapUnits = (uint32_t)br.readUe();
 
     bool frameMbsOnlyFlag = br.readBit();
     if (!frameMbsOnlyFlag) br.readBit();
+    if (out.profile_idc == 100 || out.profile_idc == 110 ||
+        out.profile_idc == 122 || out.profile_idc == 244) {
+        br.readBits(1);
+    }
 
     out.width = (widthInMbs + 1) * 16;
     out.height = (2 - (frameMbsOnlyFlag ? 1 : 0)) * (heightInMapUnits + 1) * 16;
@@ -77,10 +92,11 @@ bool parseH264SPS(const std::vector<uint8_t> &nalData, H264SPS &out) {
     return true;
 }
 
-bool parseH264PPS(const std::vector<uint8_t> &nalData, H264PPS &out) {
-    if (nalData.size() < 2) return false;
+bool parseH264PPS(const NALUnit &nal, H264PPS &out) {
+    if (nal.data.size() < nal.startCodeLen + 2) return false;
 
-    BitReader br(nalData.data() + 1, nalData.size() - 1);
+    size_t rbspOffset = nal.startCodeLen + 1;
+    BitReader br(nal.data.data() + rbspOffset, nal.data.size() - rbspOffset);
 
     out.pps_id = (uint8_t)br.readUe();
     out.sps_id = (uint8_t)br.readUe();

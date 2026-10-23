@@ -1,6 +1,7 @@
 #pragma once
 
 #include "expgolomb.h"
+#include "nalunit.h"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -45,5 +46,5 @@ struct H264PPS {
     bool redundant_pic_cnt_present_flag = false;
 };
 
-bool parseH264SPS(const std::vector<uint8_t> &nalData, H264SPS &out);
-bool parseH264PPS(const std::vector<uint8_t> &nalData, H264PPS &out);
+bool parseH264SPS(const NALUnit &nal, H264SPS &out);
+bool parseH264PPS(const NALUnit &nal, H264PPS &out);

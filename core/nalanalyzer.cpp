@@ -66,7 +66,7 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
         switch (nal.nalType) {
             case 7: {
                 a.isSPS = true;
-                if (parseH264SPS(nal.data, a.h264sps)) {
+                if (parseH264SPS(nal, a.h264sps)) {
                     oss << "=== H.264 SPS Details ===\n";
                     oss << "Profile: " << a.h264sps.profileName() << " (" << (int)a.h264sps.profile_idc << ")\n";
                     oss << "Level: " << (int)a.h264sps.level_idc << "\n";
@@ -92,7 +92,7 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
             }
             case 8: {
                 a.isPPS = true;
-                if (parseH264PPS(nal.data, a.h264pps)) {
+                if (parseH264PPS(nal, a.h264pps)) {
                     oss << "=== H.264 PPS Details ===\n";
                     oss << "PPS ID: " << (int)a.h264pps.pps_id << "\n";
                     oss << "SPS ID: " << (int)a.h264pps.sps_id << "\n";
@@ -126,7 +126,7 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
         switch (nal.nalType) {
             case 32: {
                 a.isVPS = true;
-                if (parseH265VPS(nal.data, a.h265vps)) {
+                if (parseH265VPS(nal, a.h265vps)) {
                     oss << "=== H.265 VPS Details ===\n";
                     oss << "VPS ID: " << (int)a.h265vps.vps_video_parameter_set_id << "\n";
                     oss << "Max layers: " << (int)a.h265vps.max_layers_minus1 + 1 << "\n";
@@ -138,7 +138,7 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
             }
             case 33: {
                 a.isSPS = true;
-                if (parseH265SPS(nal.data, a.h265sps)) {
+                if (parseH265SPS(nal, a.h265sps)) {
                     oss << "=== H.265 SPS Details ===\n";
                     oss << "VPS ID: " << (int)a.h265sps.vps_id << "\n";
                     oss << "Profile: " << a.h265sps.profileName() << " (" << a.h265sps.general_profile_idc << ")\n";
@@ -163,7 +163,7 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
             }
             case 34: {
                 a.isPPS = true;
-                if (parseH265PPS(nal.data, a.h265pps)) {
+                if (parseH265PPS(nal, a.h265pps)) {
                     oss << "=== H.265 PPS Details ===\n";
                     oss << "PPS ID: " << (int)a.h265pps.pps_id << "\n";
                     oss << "SPS ID: " << (int)a.h265pps.sps_id << "\n";

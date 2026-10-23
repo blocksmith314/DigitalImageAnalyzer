@@ -1,11 +1,30 @@
 #include "expgolomb.h"
 #include <stdexcept>
 
+static std::vector<uint8_t> removeEmulationPrevention(const uint8_t *data, size_t len) {
+    std::vector<uint8_t> out;
+    out.reserve(len);
+    size_t i = 0;
+    while (i < len) {
+        if (i + 2 < len && data[i] == 0x00 && data[i + 1] == 0x00 && data[i + 2] == 0x03) {
+            out.push_back(0x00);
+            out.push_back(0x00);
+            i += 3;
+        } else {
+            out.push_back(data[i]);
+            i++;
+        }
+    }
+    return out;
+}
+
 BitReader::BitReader(const std::vector<uint8_t> &data)
-    : m_data(data.data()), m_len(data.size()) {}
+    : m_owned(removeEmulationPrevention(data.data(), data.size())),
+      m_data(m_owned.data()), m_len(m_owned.size()) {}
 
 BitReader::BitReader(const uint8_t *data, size_t len)
-    : m_data(data), m_len(len) {}
+    : m_owned(removeEmulationPrevention(data, len)),
+      m_data(m_owned.data()), m_len(m_owned.size()) {}
 
 bool BitReader::eof() const {
     return m_pos >= m_len;

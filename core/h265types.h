@@ -1,6 +1,7 @@
 #pragma once
 
 #include "expgolomb.h"
+#include "nalunit.h"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -46,13 +47,13 @@ struct H265PPS {
     uint8_t sps_id = 0;
     uint8_t max_num_ref_idx_l0_default_active_minus1 = 0;
     uint8_t max_num_ref_idx_l1_default_active_minus1 = 0;
-    uint8_t init_qp_minus26 = 0;
+    int8_t init_qp_minus26 = 0;
     bool constrained_intra_pred_flag = false;
     bool cu_qp_delta_enabled_flag = false;
     uint32_t diff_cu_qp_delta_depth = 0;
     bool pps_deblocking_filter_disabled_flag = false;
 };
 
-bool parseH265VPS(const std::vector<uint8_t> &nalData, H265VPS &out);
-bool parseH265SPS(const std::vector<uint8_t> &nalData, H265SPS &out);
-bool parseH265PPS(const std::vector<uint8_t> &nalData, H265PPS &out);
+bool parseH265VPS(const NALUnit &nal, H265VPS &out);
+bool parseH265SPS(const NALUnit &nal, H265SPS &out);
+bool parseH265PPS(const NALUnit &nal, H265PPS &out);

@@ -15,6 +15,7 @@ public:
     bool eof() const;
 
 private:
+    std::vector<uint8_t> m_owned;
     const uint8_t *m_data;
     size_t m_len;
     size_t m_pos = 0;

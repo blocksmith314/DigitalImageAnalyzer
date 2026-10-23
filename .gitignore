@@ -83,3 +83,4 @@ CMakeLists.txt.user*
 compile_commands.json
 .idea
 .cache
+trace.txt
