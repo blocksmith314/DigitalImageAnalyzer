@@ -95,10 +95,13 @@ void MainWindow::setupUI() {
     connect(m_stopBtn, &QPushButton::clicked, this, &MainWindow::onStop);
 
     m_seekSlider = new QSlider(Qt::Horizontal);
-    m_seekSlider->setEnabled(false);
-    connect(m_seekSlider, &QSlider::sliderMoved, this, &MainWindow::onSeek);
+    m_seekSlider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_seekSlider->setMinimumWidth(300);
+    m_seekSlider->setRange(0, 0);
+    connect(m_seekSlider, &QSlider::valueChanged, this, &MainWindow::onSeek);
 
     m_frameInfoLabel = new QLabel("Frame: - / -");
+    m_frameInfoLabel->setMinimumWidth(80);
 
     QHBoxLayout *controlRow = new QHBoxLayout();
     controlRow->addWidget(m_playBtn);
@@ -148,8 +151,8 @@ void MainWindow::setupUI() {
 
 void MainWindow::openFile() {
     QString path = QFileDialog::getOpenFileName(
-        this, "Open Bitstream File", "",
-        "Bitstream Files (*.h264 *.h265 *.264 *.265 *.hevc);;All Files (*)");
+        this, "Open Video File", "",
+        "Video Files (*.h264 *.h265 *.264 *.265 *.hevc);;All Files (*)");
     if (path.isEmpty()) return;
     if (loadFile(path)) addRecentFile(path);
 }
@@ -314,13 +317,12 @@ void MainWindow::startPlayer() {
         m_videoLabel->setText("No frames decoded");
         m_playBtn->setEnabled(false);
         m_stopBtn->setEnabled(false);
-        m_seekSlider->setEnabled(false);
+        m_seekSlider->setRange(0, 0);
         return;
     }
 
     m_seekSlider->setRange(0, qMax(0, m_totalFrames - 1));
     m_seekSlider->setValue(0);
-    m_seekSlider->setEnabled(true);
     m_playBtn->setEnabled(true);
     m_stopBtn->setEnabled(true);
 
@@ -348,7 +350,7 @@ void MainWindow::highlightFrame(int frameIdx) {
         int fIdx = item->data(0, Qt::UserRole).toInt();
         bool match = (fIdx == frameIdx && frameIdx >= 0);
         QColor origColor = item->data(0, Qt::UserRole + 1).value<QColor>();
-        QColor bg = match ? QColor(255, 230, 120) : origColor;
+        QColor bg = match ? QColor(255, 165, 30) : origColor;
         for (int c = 0; c < item->columnCount(); c++) {
             if (bg.isValid())
                 item->setBackground(c, bg);
