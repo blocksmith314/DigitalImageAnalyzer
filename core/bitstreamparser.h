@@ -13,6 +13,7 @@ public:
     bool parseBuffer(const uint8_t *data, size_t len);
 
     const std::vector<NALUnit> &nalUnits() const { return m_nals; }
+    std::vector<NALUnit> &nalUnitsMut() { return m_nals; }
     const std::string &lastError() const { return m_error; }
 
     static CodecType detectCodec(const uint8_t *data, size_t len);

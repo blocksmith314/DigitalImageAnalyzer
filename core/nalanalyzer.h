@@ -38,7 +38,7 @@ struct StreamStats {
 
 class NALAnalyzer {
 public:
-    void analyzeAll(const std::vector<NALUnit> &nals);
+    void analyzeAll(std::vector<NALUnit> &nals);
     NALAnalysis analyzeOne(const NALUnit &nal) const;
     const StreamStats &stats() const { return m_stats; }
     const std::map<int, H264SPS> &h264SpsMap() const { return m_h264SpsMap; }

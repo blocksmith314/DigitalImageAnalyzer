@@ -1,5 +1,4 @@
 #pragma once
-
 #include "nalunit.h"
 #include <QImage>
 #include <string>
@@ -19,11 +18,18 @@ public:
 
     bool openFile(const std::string &path, CodecType codec);
     void close();
+
+    void reset();
     bool decodeNextFrame(DecodedFrame &out);
+    bool seekToFrame(int targetIndex);
+
     bool decodeKeyframes(std::vector<DecodedFrame> &out, int maxFrames = 10);
+
     int frameCount() const { return m_frameCount; }
     int width() const { return m_width; }
     int height() const { return m_height; }
+    double frameRate() const { return m_frameRate; }
+    int currentFrameIndex() const { return m_currentFrame; }
     const std::string &lastError() const { return m_error; }
 
 private:
@@ -32,5 +38,9 @@ private:
     int m_frameCount = 0;
     int m_width = 0;
     int m_height = 0;
+    int m_currentFrame = 0;
+    double m_frameRate = 30.0;
+    std::string m_path;
+    CodecType m_codec = CodecType::H264;
     std::string m_error;
 };

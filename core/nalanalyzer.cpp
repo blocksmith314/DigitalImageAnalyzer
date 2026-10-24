@@ -1,7 +1,7 @@
 #include "nalanalyzer.h"
 #include <sstream>
 
-void NALAnalyzer::analyzeAll(const std::vector<NALUnit> &nals) {
+void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
     m_stats = StreamStats();
     m_h264SpsMap.clear();
     m_h264PpsMap.clear();
@@ -13,8 +13,44 @@ void NALAnalyzer::analyzeAll(const std::vector<NALUnit> &nals) {
     m_stats.codec = nals.front().codec;
     m_stats.totalNals = (uint32_t)nals.size();
 
-    for (const auto &nal : nals) {
+    int frameIndex = -1;
+    bool prevWasSlice = false;
+
+    for (auto &nal : nals) {
         m_stats.totalBytes += nal.size;
+
+        bool isSlice = false;
+        bool isIDR = false;
+        H264SliceHeader sh;
+
+        if (nal.codec == CodecType::H264) {
+            isSlice = (nal.nalType >= 1 && nal.nalType <= 5);
+            isIDR = (nal.nalType == 5);
+        } else {
+            isSlice = (nal.nalType <= 21 && nal.nalType >= 0);
+            isIDR = (nal.nalType == 19 || nal.nalType == 20 || nal.nalType == 21);
+        }
+
+        if (isSlice) {
+            if (!prevWasSlice) frameIndex++;
+            if (nal.codec == CodecType::H264 && parseH264SliceHeader(nal, H264SPS(), sh)) {
+                if (sh.first_mb_in_slice == 0 && prevWasSlice) frameIndex++;
+            }
+            nal.frameIndex = frameIndex;
+            if (isIDR) {
+                nal.frameType = 'I';
+            } else if (nal.codec == CodecType::H264) {
+                nal.frameType = sh.frameTypeChar();
+            } else {
+                nal.frameType = 'P';
+            }
+            prevWasSlice = true;
+        } else {
+            nal.frameIndex = -1;
+            nal.frameType = 0;
+            prevWasSlice = false;
+        }
+
         NALAnalysis a = analyzeOne(nal);
         if (a.isSPS) {
             m_stats.spsCount++;

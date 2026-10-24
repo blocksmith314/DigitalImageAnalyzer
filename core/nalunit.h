@@ -19,7 +19,8 @@ struct NALUnit {
     uint8_t nuhLayerId = 0;
     uint16_t nuhTemporalIdPlus1 = 0;
     std::vector<uint8_t> data;
-
+    int frameIndex = -1;
+    char frameType = 0;
     std::string typeName() const;
     std::string summary() const;
 };

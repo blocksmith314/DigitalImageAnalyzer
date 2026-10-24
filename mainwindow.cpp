@@ -1,5 +1,4 @@
 #include "mainwindow.h"
-
 #include <QMenuBar>
 #include <QToolBar>
 #include <QSplitter>
@@ -15,6 +14,9 @@
 #include <QStatusBar>
 #include <QFile>
 #include <QFileInfo>
+#include <QSettings>
+#include <QCloseEvent>
+#include <QResizeEvent>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), m_parser(CodecType::H264) {
@@ -32,13 +34,30 @@ void MainWindow::setupUI() {
     openAct->setShortcut(QKeySequence::Open);
     connect(openAct, &QAction::triggered, this, &MainWindow::openFile);
     fileMenu->addSeparator();
+    m_recentMenu = fileMenu->addMenu("Recent Files");
+    for (int i = 0; i < MAX_RECENT_FILES; ++i) {
+        QAction *a = m_recentMenu->addAction("");
+        a->setVisible(false);
+        a->setShortcut(QKeySequence(Qt::CTRL | (Qt::Key_0 + i % 9 + 1)));
+        connect(a, &QAction::triggered, this, &MainWindow::openRecentFile);
+        m_recentActions.append(a);
+    }
+    m_recentMenu->addSeparator();
+    QAction *clearAct = m_recentMenu->addAction("Clear Recent");
+    connect(clearAct, &QAction::triggered, this, [this]() {
+        m_recentFiles.clear();
+        saveRecentFiles();
+        updateRecentMenu();
+    });
+
+    fileMenu->addSeparator();
     QAction *quitAct = fileMenu->addAction("Quit");
     quitAct->setShortcut(QKeySequence::Quit);
     connect(quitAct, &QAction::triggered, this, &QWidget::close);
 
     m_nalList = new QTreeWidget();
-    m_nalList->setColumnCount(5);
-    m_nalList->setHeaderLabels({"#", "Type", "Size", "Offset", "Name"});
+    m_nalList->setColumnCount(6);
+    m_nalList->setHeaderLabels({"#", "NAL Type", "NAL Name", "Size", "Offset", "Frame Type"});
     m_nalList->header()->setStretchLastSection(true);
     m_nalList->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_nalList->setAlternatingRowColors(true);
@@ -51,20 +70,45 @@ void MainWindow::setupUI() {
     m_details->setOpenExternalLinks(false);
     m_details->setPlaceholderText("Select a NAL unit to view details...");
 
-    m_thumbnailLabel = new QLabel("(no frame decoded)");
-    m_thumbnailLabel->setAlignment(Qt::AlignCenter);
-    m_thumbnailLabel->setMinimumHeight(200);
-    m_thumbnailLabel->setStyleSheet("border: 1px solid #cccccc; background: #f8f8f8;");
-    m_thumbnailLabel->setScaledContents(false);
+    m_videoLabel = new QLabel("(no video loaded)");
+    m_videoLabel->setAlignment(Qt::AlignCenter);
+    m_videoLabel->setMinimumHeight(240);
+    m_videoLabel->setStyleSheet("border: 1px solid #cccccc; background: #1a1a1a; color: #aaaaaa;");
+    m_videoLabel->setScaledContents(false);
+    m_videoLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
+    m_playerTimer = new QTimer(this);
+    connect(m_playerTimer, &QTimer::timeout, this, &MainWindow::onPlayerTick);
+
+    m_playBtn = new QPushButton("Play");
+    m_playBtn->setEnabled(false);
+    connect(m_playBtn, &QPushButton::clicked, this, &MainWindow::onPlayPause);
+
+    m_stopBtn = new QPushButton("Stop");
+    m_stopBtn->setEnabled(false);
+    connect(m_stopBtn, &QPushButton::clicked, this, &MainWindow::onStop);
+
+    m_seekSlider = new QSlider(Qt::Horizontal);
+    m_seekSlider->setEnabled(false);
+    connect(m_seekSlider, &QSlider::sliderMoved, this, &MainWindow::onSeek);
+
+    m_frameInfoLabel = new QLabel("Frame: - / -");
+
+    QHBoxLayout *controlRow = new QHBoxLayout();
+    controlRow->addWidget(m_playBtn);
+    controlRow->addWidget(m_stopBtn);
+    controlRow->addWidget(m_seekSlider, 1);
+    controlRow->addWidget(m_frameInfoLabel);
 
     QWidget *rightPanel = new QWidget();
     QVBoxLayout *rightLayout = new QVBoxLayout(rightPanel);
     rightLayout->setContentsMargins(0, 0, 0, 0);
 
-    QGroupBox *thumbGroup = new QGroupBox("Keyframe Thumbnails");
-    QVBoxLayout *thumbLayout = new QVBoxLayout(thumbGroup);
-    thumbLayout->addWidget(m_thumbnailLabel);
-    rightLayout->addWidget(thumbGroup);
+    QGroupBox *playerGroup = new QGroupBox("Video Player");
+    QVBoxLayout *playerLayout = new QVBoxLayout(playerGroup);
+    playerLayout->addWidget(m_videoLabel, 1);
+    playerLayout->addLayout(controlRow);
+    rightLayout->addWidget(playerGroup);
 
     QGroupBox *detailGroup = new QGroupBox("NAL Details");
     QVBoxLayout *detailLayout = new QVBoxLayout(detailGroup);
@@ -92,6 +136,8 @@ void MainWindow::setupUI() {
 
     m_fileInfoLabel = new QLabel("No file loaded");
     statusBar()->addWidget(m_fileInfoLabel, 1);
+    loadRecentFiles();
+    updateRecentMenu();
 }
 
 void MainWindow::openFile() {
@@ -99,7 +145,10 @@ void MainWindow::openFile() {
         this, "Open Bitstream File", "",
         "Bitstream Files (*.h264 *.h265 *.264 *.265 *.hevc);;All Files (*)");
     if (path.isEmpty()) return;
+    if (loadFile(path)) addRecentFile(path);
+}
 
+bool MainWindow::loadFile(const QString &path) {
     std::string sp = path.toStdString();
     BitstreamParser detectParser(CodecType::H264);
     std::vector<uint8_t> probeBuf(4096);
@@ -113,15 +162,15 @@ void MainWindow::openFile() {
     m_parser = BitstreamParser(detected);
     if (!m_parser.parseFile(sp)) {
         QMessageBox::critical(this, "Error", QString::fromStdString(m_parser.lastError()));
-        return;
+        return false;
     }
 
     m_currentPath = sp;
-    m_analyzer.analyzeAll(m_parser.nalUnits());
+    m_analyzer.analyzeAll(m_parser.nalUnitsMut());
 
     buildNALList();
     updateStats();
-    decodeThumbnails();
+    startPlayer();
 
     QFileInfo fi(path);
     auto &stats = m_analyzer.stats();
@@ -136,6 +185,7 @@ void MainWindow::openFile() {
             .arg(stats.height));
 
     setWindowTitle(QString("Digital Image Analyzer - %1").arg(fi.fileName()));
+    return true;
 }
 
 void MainWindow::buildNALList() {
@@ -146,11 +196,15 @@ void MainWindow::buildNALList() {
         QStringList items;
         items << QString::number(i);
         items << QString::number(nal.nalType);
+        items << QString::fromStdString(nal.typeName());
         items << QString::number(nal.size);
         items << QString("0x%1").arg(nal.offset, 0, 16);
-        items << QString::fromStdString(nal.typeName());
+        items << (nal.frameIndex >= 0 && nal.frameType
+                      ? QString("%1 #%2").arg(QChar(nal.frameType)).arg(nal.frameIndex)
+                      : "-");
 
         QTreeWidgetItem *item = new QTreeWidgetItem(items);
+        item->setData(0, Qt::UserRole, nal.frameIndex);
 
         QColor color;
         if (nal.codec == CodecType::H264) {
@@ -176,6 +230,7 @@ void MainWindow::buildNALList() {
                 item->setBackground(c, color);
             }
         }
+        item->setData(0, Qt::UserRole + 1, color.isValid() ? color : QVariant());
 
         m_nalList->addTopLevelItem(item);
     }
@@ -221,36 +276,120 @@ void MainWindow::updateStats() {
     m_statsPanel->setHtml(html);
 }
 
-void MainWindow::decodeThumbnails() {
+void MainWindow::startPlayer() {
     auto &stats = m_analyzer.stats();
-    m_decoder.close();
+    m_playerTimer->stop();
+    m_isPlaying = false;
 
-    if (!m_decoder.openFile(m_currentPath, stats.codec)) {
-        m_thumbnailLabel->setText(QString("Decoder error: %1").arg(m_decoder.lastError().c_str()));
+    m_playerDecoder.close();
+    if (!m_playerDecoder.openFile(m_currentPath, stats.codec)) {
+        m_videoLabel->setText(QString("Decoder error: %1").arg(m_playerDecoder.lastError().c_str()));
+        m_playBtn->setEnabled(false);
+        m_stopBtn->setEnabled(false);
+        m_seekSlider->setEnabled(false);
         return;
     }
 
-    std::vector<DecodedFrame> frames;
-    m_decoder.decodeKeyframes(frames, 5);
+    m_frames.clear();
+    DecodedFrame frame;
+    while (m_playerDecoder.decodeNextFrame(frame)) {
+        m_frames.push_back(std::move(frame));
+    }
+    m_totalFrames = m_frames.size();
+    m_frameRate = m_playerDecoder.frameRate();
+    m_playerDecoder.close();
 
-    if (frames.empty()) {
-        m_thumbnailLabel->setText("No frames decoded");
+    if (m_frames.empty()) {
+        m_videoLabel->setText("No frames decoded");
+        m_playBtn->setEnabled(false);
+        m_stopBtn->setEnabled(false);
+        m_seekSlider->setEnabled(false);
         return;
     }
 
-    QString label;
-    for (size_t i = 0; i < frames.size(); i++) {
-        label += QString("Frame %1 (PTS=%2) - %3x%4\n")
-                     .arg(i)
-                     .arg(frames[i].pts)
-                     .arg(frames[i].width)
-                     .arg(frames[i].height);
-    }
+    m_seekSlider->setRange(0, qMax(0, m_totalFrames - 1));
+    m_seekSlider->setValue(0);
+    m_seekSlider->setEnabled(true);
+    m_playBtn->setEnabled(true);
+    m_stopBtn->setEnabled(true);
 
-    QImage thumbnail = frames[0].image.scaled(
-        400, 225, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-    m_thumbnailLabel->setPixmap(QPixmap::fromImage(thumbnail));
-    m_thumbnailLabel->setText(label);
+    m_videoSize = m_videoLabel->size();
+    showFrame(m_frames[0].image, 0);
+}
+
+void MainWindow::showFrame(const QImage &image, int frameIdx) {
+    if (image.isNull()) return;
+    QSize target = m_videoSize.isValid() ? m_videoSize : m_videoLabel->size();
+    QImage scaled = image.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    m_videoLabel->setPixmap(QPixmap::fromImage(scaled));
+    m_frameInfoLabel->setText(QString("Frame: %1 / %2").arg(frameIdx).arg(m_totalFrames));
+    if (!m_seekSlider->isSliderDown()) {
+        QSignalBlocker blocker(m_seekSlider);
+        m_seekSlider->setValue(frameIdx);
+    }
+    highlightFrame(frameIdx);
+}
+
+void MainWindow::highlightFrame(int frameIdx) {
+    QList<QTreeWidgetItem *> items = m_nalList->findItems("*", Qt::MatchWildcard);
+    QTreeWidgetItem *firstMatch = nullptr;
+    for (QTreeWidgetItem *item : items) {
+        int fIdx = item->data(0, Qt::UserRole).toInt();
+        bool match = (fIdx == frameIdx && frameIdx >= 0);
+        QColor origColor = item->data(0, Qt::UserRole + 1).value<QColor>();
+        QColor bg = match ? QColor(255, 230, 120) : origColor;
+        for (int c = 0; c < item->columnCount(); c++) {
+            if (bg.isValid())
+                item->setBackground(c, bg);
+            else
+                item->setBackground(c, QBrush());
+        }
+        if (match && !firstMatch) firstMatch = item;
+    }
+    if (firstMatch) {
+        m_nalList->scrollToItem(firstMatch, QAbstractItemView::PositionAtCenter);
+    }
+}
+
+void MainWindow::onPlayPause() {
+    if (m_totalFrames == 0) return;
+
+    if (!m_isPlaying) {
+        m_playerTimer->start(qMax(1, int(1000.0 / m_frameRate)));
+        m_playBtn->setText("Pause");
+        m_isPlaying = true;
+    } else {
+        m_playerTimer->stop();
+        m_playBtn->setText("Play");
+        m_isPlaying = false;
+    }
+}
+
+void MainWindow::onStop() {
+    m_playerTimer->stop();
+    m_isPlaying = false;
+    m_playBtn->setText("Play");
+    m_seekSlider->setValue(0);
+    if (!m_frames.empty()) showFrame(m_frames[0].image, 0);
+}
+
+void MainWindow::onSeek(int value) {
+    if (value >= 0 && value < (int)m_frames.size()) {
+        showFrame(m_frames[value].image, value);
+    }
+}
+
+void MainWindow::onPlayerTick() {
+    int next = m_seekSlider->value() + 1;
+    if (next >= m_totalFrames) {
+        m_playerTimer->stop();
+        m_isPlaying = false;
+        m_playBtn->setText("Play");
+        next = 0;
+    }
+    if (next < (int)m_frames.size()) {
+        showFrame(m_frames[next].image, next);
+    }
 }
 
 void MainWindow::onNALSelected(QTreeWidgetItem *current, QTreeWidgetItem *previous) {
@@ -265,4 +404,89 @@ void MainWindow::onNALSelected(QTreeWidgetItem *current, QTreeWidgetItem *previo
 
     NALAnalysis analysis = m_analyzer.analyzeOne(nals[idx]);
     m_details->setPlainText(QString::fromStdString(analysis.details));
+
+    int fIdx = nals[idx].frameIndex;
+    if (fIdx >= 0 && fIdx < (int)m_frames.size()) {
+        if (m_isPlaying) {
+            m_playerTimer->stop();
+            m_isPlaying = false;
+            m_playBtn->setText("Play");
+        }
+        showFrame(m_frames[fIdx].image, fIdx);
+    }
+}
+
+void MainWindow::openRecentFile() {
+    QAction *action = qobject_cast<QAction *>(sender());
+    if (!action) return;
+    int idx = action->data().toInt();
+    if (idx < 0 || idx >= m_recentFiles.size()) return;
+    QString path = m_recentFiles.at(idx);
+    if (!QFile::exists(path)) {
+        QMessageBox::warning(this, "File Missing",
+                             QString("File no longer exists:\n%1").arg(path));
+        m_recentFiles.removeAt(idx);
+        saveRecentFiles();
+        updateRecentMenu();
+        return;
+    }
+    if (loadFile(path)) addRecentFile(path);
+}
+
+void MainWindow::addRecentFile(const QString &path) {
+    QString canonical = QFileInfo(path).canonicalFilePath();
+    if (canonical.isEmpty()) canonical = path;
+    m_recentFiles.removeAll(canonical);
+    m_recentFiles.prepend(canonical);
+    while (m_recentFiles.size() > MAX_RECENT_FILES)
+        m_recentFiles.removeLast();
+    saveRecentFiles();
+    updateRecentMenu();
+}
+
+void MainWindow::updateRecentMenu() {
+    for (int i = 0; i < m_recentActions.size(); ++i) {
+        QAction *a = m_recentActions.at(i);
+        if (i < m_recentFiles.size()) {
+            QString path = m_recentFiles.at(i);
+            QFileInfo fi(path);
+            QString label = QString("&%1  %2").arg(i + 1).arg(fi.filePath());
+            a->setText(label);
+            a->setData(i);
+            a->setVisible(true);
+            a->setEnabled(QFile::exists(path));
+        } else {
+            a->setVisible(false);
+        }
+    }
+    m_recentMenu->setEnabled(!m_recentFiles.isEmpty());
+}
+
+void MainWindow::loadRecentFiles() {
+    QSettings settings;
+    m_recentFiles = settings.value("recentFiles").toStringList();
+}
+
+void MainWindow::saveRecentFiles() {
+    QSettings settings;
+    settings.setValue("recentFiles", m_recentFiles);
+}
+
+void MainWindow::closeEvent(QCloseEvent *event) {
+    saveRecentFiles();
+    event->accept();
+}
+
+void MainWindow::resizeEvent(QResizeEvent *event) {
+    QMainWindow::resizeEvent(event);
+    if (!m_frames.empty() && m_videoLabel) {
+        QSize newSize = m_videoLabel->size();
+        if (newSize != m_videoSize && newSize.width() > 0 && newSize.height() > 0) {
+            m_videoSize = newSize;
+            int curIdx = m_seekSlider->value();
+            if (curIdx >= 0 && curIdx < (int)m_frames.size()) {
+                showFrame(m_frames[curIdx].image, curIdx);
+            }
+        }
+    }
 }

@@ -48,3 +48,18 @@ struct H264PPS {
 
 bool parseH264SPS(const NALUnit &nal, H264SPS &out);
 bool parseH264PPS(const NALUnit &nal, H264PPS &out);
+
+struct H264SliceHeader {
+    uint32_t first_mb_in_slice = 0;
+    uint32_t slice_type = 0;
+    bool isIFrame() const { return slice_type % 5 == 2; }
+    bool isBFrame() const { return slice_type % 5 == 1; }
+    bool isPFrame() const { return slice_type % 5 == 0 || slice_type % 5 == 3 || slice_type % 5 == 4; }
+    char frameTypeChar() const {
+        if (isIFrame()) return 'I';
+        if (isBFrame()) return 'B';
+        return 'P';
+    }
+};
+
+bool parseH264SliceHeader(const NALUnit &nal, const H264SPS &sps, H264SliceHeader &out);

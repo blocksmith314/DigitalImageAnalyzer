@@ -120,3 +120,11 @@ bool parseH264PPS(const NALUnit &nal, H264PPS &out) {
 
     return true;
 }
+bool parseH264SliceHeader(const NALUnit &nal, const H264SPS &sps, H264SliceHeader &out) {
+    if (nal.data.size() < nal.startCodeLen + 3) return false;
+    size_t rbspOffset = nal.startCodeLen + 1;
+    BitReader br(nal.data.data() + rbspOffset, nal.data.size() - rbspOffset);
+    out.first_mb_in_slice = (uint32_t)br.readUe();
+    out.slice_type = (uint32_t)br.readUe();
+    return true;
+}

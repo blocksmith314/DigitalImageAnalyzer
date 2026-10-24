@@ -96,7 +96,17 @@ bool FFmpegDecoder::openFile(const std::string &path, CodecType codec) {
     m_impl->rgbBufferSize = av_image_get_buffer_size(AV_PIX_FMT_RGB24, m_width, m_height, 1);
     m_impl->rgbBuffer = (uint8_t *)av_malloc(m_impl->rgbBufferSize);
 
+    if (stream->avg_frame_rate.den && stream->avg_frame_rate.num) {
+        m_frameRate = av_q2d(stream->avg_frame_rate);
+    } else if (stream->r_frame_rate.den && stream->r_frame_rate.num) {
+        m_frameRate = av_q2d(stream->r_frame_rate);
+    }
+    if (m_frameRate <= 0) m_frameRate = 30.0;
+
+    m_path = path;
+    m_codec = codec;
     m_frameCount = 0;
+    m_currentFrame = 0;
     return true;
 }
 
@@ -159,6 +169,7 @@ bool FFmpegDecoder::decodeNextFrame(DecodedFrame &out) {
             out.image = img.copy();
 
             m_frameCount++;
+            m_currentFrame++;
             gotFrame = true;
 
             av_packet_unref(pkt);
@@ -188,6 +199,7 @@ bool FFmpegDecoder::decodeNextFrame(DecodedFrame &out) {
         out.height = m_height;
         out.image = img.copy();
         m_frameCount++;
+        m_currentFrame++;
         gotFrame = true;
     }
 
@@ -206,4 +218,22 @@ bool FFmpegDecoder::decodeKeyframes(std::vector<DecodedFrame> &out, int maxFrame
         decoded++;
     }
     return decoded > 0;
+}
+
+void FFmpegDecoder::reset() {
+    if (!m_path.empty()) {
+        openFile(m_path, m_codec);
+    }
+}
+
+bool FFmpegDecoder::seekToFrame(int targetIndex) {
+    if (targetIndex < m_currentFrame) {
+        reset();
+        if (targetIndex == 0) return true;
+    }
+    DecodedFrame dummy;
+    while (m_currentFrame < targetIndex) {
+        if (!decodeNextFrame(dummy)) return false;
+    }
+    return true;
 }
