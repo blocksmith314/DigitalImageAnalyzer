@@ -1,4 +1,5 @@
 #include "nalanalyzer.h"
+#include "seiparser.h"
 #include <sstream>
 #include <algorithm>
 
@@ -40,7 +41,7 @@ void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
                     m_stats.width = a.h265sps.width;
                     m_stats.height = a.h265sps.height;
                     m_stats.profile = a.h265sps.profileName();
-                    m_stats.level = std::to_string(a.h265sps.general_level_idc);
+                    m_stats.level = std::to_string(a.h265sps.level_idc);
                 }
             }
         } else if (a.isPPS) {
@@ -210,18 +211,37 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
                     oss << "Level: " << (int)a.h264sps.level_idc << "\n";
                     oss << "SPS ID: " << (int)a.h264sps.sps_id << "\n";
                     oss << "Resolution: " << a.h264sps.width << " x " << a.h264sps.height << "\n";
-                    oss << "Max frame num: 2^" << a.h264sps.log2_max_frame_num_minus4 + 4 << "\n";
+                    oss << "Chroma format: " << a.h264sps.chroma_format_idc << "\n";
+                    oss << "Bit depth: luma=" << 8 + a.h264sps.bit_depth_luma_minus8
+                        << " chroma=" << 8 + a.h264sps.bit_depth_chroma_minus8 << "\n";
+                    oss << "Max frame num: " << (1u << (a.h264sps.log2_max_frame_num_minus4 + 4)) << "\n";
                     oss << "PIC order cnt type: " << a.h264sps.pic_order_cnt_type << "\n";
+                    if (a.h264sps.pic_order_cnt_type == 0)
+                        oss << "Log2 max POC LSB: " << a.h264sps.log2_max_pic_order_cnt_lsb_minus4 + 4 << "\n";
                     oss << "Max ref frames: " << a.h264sps.max_num_ref_frames << "\n";
-                    oss << "Constraint set 0: " << a.h264sps.constraint_set0_flag << "\n";
-                    oss << "Constraint set 1: " << a.h264sps.constraint_set1_flag << "\n";
-                    oss << "Constraint set 2: " << a.h264sps.constraint_set2_flag << "\n";
-                    oss << "Constraint set 3: " << a.h264sps.constraint_set3_flag << "\n";
+                    oss << "Frame only: " << a.h264sps.frame_mbs_only_flag << "\n";
+                    oss << "Direct 8x8: " << a.h264sps.direct_8x8_inference_flag << "\n";
+                    oss << "Constraint flags: " << a.h264sps.constraint_set0_flag << a.h264sps.constraint_set1_flag
+                        << a.h264sps.constraint_set2_flag << a.h264sps.constraint_set3_flag
+                        << a.h264sps.constraint_set4_flag << a.h264sps.constraint_set5_flag << "\n";
                     if (a.h264sps.hasCropping) {
                         oss << "Cropping: left=" << a.h264sps.crop_left
                             << " right=" << a.h264sps.crop_right
                             << " top=" << a.h264sps.crop_top
                             << " bottom=" << a.h264sps.crop_bottom << "\n";
+                    }
+                    if (a.h264sps.timing_info_present_flag) {
+                        oss << "Timing: num_units_in_tick=" << a.h264sps.num_units_in_tick
+                            << " time_scale=" << a.h264sps.time_scale << "\n";
+                        if (a.h264sps.num_units_in_tick > 0) {
+                            oss << "Frame rate: "
+                                << (double)a.h264sps.time_scale / (2.0 * a.h264sps.num_units_in_tick)
+                                << " fps\n";
+                        }
+                    }
+                    if (a.h264sps.bitstream_restriction_flag) {
+                        oss << "Max reorder frames: " << a.h264sps.max_num_reorder_frames << "\n";
+                        oss << "Max dec frame buffering: " << a.h264sps.max_dec_frame_buffering << "\n";
                     }
                 } else {
                     oss << "Failed to parse SPS\n";
@@ -235,10 +255,20 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
                     oss << "PPS ID: " << (int)a.h264pps.pps_id << "\n";
                     oss << "SPS ID: " << (int)a.h264pps.sps_id << "\n";
                     oss << "Entropy coding (CABAC): " << a.h264pps.entropy_coding_mode_flag << "\n";
+                    oss << "Slice groups: " << a.h264pps.num_slice_groups_minus1 + 1 << "\n";
+                    if (a.h264pps.num_slice_groups_minus1 > 0)
+                        oss << "Slice group map type: " << a.h264pps.slice_group_map_type << "\n";
+                    oss << "Ref idx L0/L1: " << a.h264pps.num_ref_idx_l0_default_active_minus1 + 1
+                        << "/" << a.h264pps.num_ref_idx_l1_default_active_minus1 + 1 << "\n";
                     oss << "Weighted pred: " << a.h264pps.weighted_pred_flag << "\n";
                     oss << "Weighted bipred idc: " << (int)a.h264pps.weighted_bipred_idc << "\n";
                     oss << "Init QP: " << 26 + a.h264pps.pic_init_qp_minus26 << "\n";
+                    oss << "Chroma QP offset: " << a.h264pps.chroma_qp_index_offset << "\n";
                     oss << "Deblocking filter present: " << a.h264pps.deblocking_filter_control_present_flag << "\n";
+                    oss << "Constrained intra pred: " << a.h264pps.constrained_intra_pred_flag << "\n";
+                    oss << "Redundant PIC cnt: " << a.h264pps.redundant_pic_cnt_present_flag << "\n";
+                    oss << "Transform 8x8: " << a.h264pps.transform_8x8_mode_flag << "\n";
+                    oss << "Second chroma QP offset: " << a.h264pps.second_chroma_qp_index_offset << "\n";
                 } else {
                     oss << "Failed to parse PPS\n";
                 }
@@ -250,9 +280,21 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
             case 1:
                 oss << "=== H.264 Non-IDR Slice ===\n";
                 break;
-            case 6:
+            case 6: {
                 oss << "=== H.264 SEI (Supplemental Enhancement Information) ===\n";
+                std::vector<SeiMessage> msgs;
+                if (parseSeiMessages(nal, false, msgs) && !msgs.empty()) {
+                    for (size_t i = 0; i < msgs.size(); i++) {
+                        oss << "Message #" << i << ": type " << msgs[i].type
+                            << " (" << seiTypeName(msgs[i].type) << "), "
+                            << msgs[i].size << " bytes\n";
+                        oss << "    " << msgs[i].text << "\n";
+                    }
+                } else {
+                    oss << "No SEI messages found\n";
+                }
                 break;
+            }
             case 9:
                 oss << "=== H.264 AUD (Access Unit Delimiter) ===\n";
                 break;
@@ -266,9 +308,13 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
                 a.isVPS = true;
                 if (parseH265VPS(nal, a.h265vps)) {
                     oss << "=== H.265 VPS Details ===\n";
-                    oss << "VPS ID: " << (int)a.h265vps.vps_video_parameter_set_id << "\n";
+                    oss << "VPS ID: " << (int)a.h265vps.vps_id << "\n";
+                    oss << "Base layer internal/available: " << a.h265vps.base_layer_internal_flag
+                        << "/" << a.h265vps.base_layer_available_flag << "\n";
                     oss << "Max layers: " << (int)a.h265vps.max_layers_minus1 + 1 << "\n";
                     oss << "Max sub-layers: " << (int)a.h265vps.max_sub_layers_minus1 + 1 << "\n";
+                    oss << "Temporal ID nesting: " << a.h265vps.temporal_id_nesting_flag << "\n";
+                    oss << "Max layer ID: " << (int)a.h265vps.max_layer_id << "\n";
                 } else {
                     oss << "Failed to parse VPS\n";
                 }
@@ -279,15 +325,29 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
                 if (parseH265SPS(nal, a.h265sps)) {
                     oss << "=== H.265 SPS Details ===\n";
                     oss << "VPS ID: " << (int)a.h265sps.vps_id << "\n";
-                    oss << "Profile: " << a.h265sps.profileName() << " (" << a.h265sps.general_profile_idc << ")\n";
-                    oss << "Level: " << a.h265sps.general_level_idc << "\n";
+                    oss << "SPS ID: " << (int)a.h265sps.sps_id << "\n";
+                    oss << "Profile: " << a.h265sps.profileName() << " (" << (int)a.h265sps.profile_idc
+                        << ")  tier=" << a.h265sps.tier_flag << "  space=" << (int)a.h265sps.profile_space << "\n";
+                    oss << "Level: " << (int)a.h265sps.level_idc << "\n";
                     oss << "Resolution: " << a.h265sps.width << " x " << a.h265sps.height << "\n";
-                    oss << "Pic width in luma: " << a.h265sps.pic_width_in_luma_samples << "\n";
-                    oss << "Pic height in luma: " << a.h265sps.pic_height_in_luma_samples << "\n";
+                    oss << "Pic size (luma): " << a.h265sps.pic_width_in_luma_samples
+                        << " x " << a.h265sps.pic_height_in_luma_samples << "\n";
                     oss << "Chroma format: " << (int)a.h265sps.chroma_format_idc << "\n";
-                    oss << "Log2(Min luma CB size): " << a.h265sps.log2_min_luma_coding_block_size_minus3 + 3 << "\n";
-                    oss << "Log2(Max luma CB size): " << a.h265sps.log2_min_luma_coding_block_size_minus3 + 3 + a.h265sps.log2_diff_max_min_luma_coding_block_size << "\n";
-                    oss << "Max ref pics: " << a.h265sps.max_num_ref_pics << "\n";
+                    oss << "Bit depth: luma=" << 8 + a.h265sps.bit_depth_luma_minus8
+                        << " chroma=" << 8 + a.h265sps.bit_depth_chroma_minus8 << "\n";
+                    oss << "CTU size: " << (1u << (a.h265sps.log2_min_luma_coding_block_size_minus3 + 3 + a.h265sps.log2_diff_max_min_luma_coding_block_size)) << "\n";
+                    oss << "Min CB size: " << (1u << (a.h265sps.log2_min_luma_coding_block_size_minus3 + 3)) << "\n";
+                    oss << "Transform depth (inter/intra): " << a.h265sps.max_transform_hierarchy_depth_inter
+                        << "/" << a.h265sps.max_transform_hierarchy_depth_intra << "\n";
+                    oss << "Max dec pic buffering: " << a.h265sps.max_dec_pic_buffering_minus1 + 1 << "\n";
+                    oss << "Max reorder pics: " << a.h265sps.max_num_reorder_pics << "\n";
+                    oss << "Log2 max POC LSB: " << a.h265sps.log2_max_pic_order_cnt_lsb_minus4 + 4 << "\n";
+                    oss << "Short-term RPS: " << a.h265sps.num_short_term_ref_pic_sets << "\n";
+                    oss << "AMP/SAO: " << a.h265sps.amp_enabled_flag << "/" << a.h265sps.sample_adaptive_offset_enabled_flag << "\n";
+                    if (a.h265sps.vui_timing_info_present_flag && a.h265sps.vui_num_units_in_tick > 0) {
+                        oss << "Frame rate: "
+                            << (double)a.h265sps.vui_time_scale / a.h265sps.vui_num_units_in_tick << " fps\n";
+                    }
                     if (a.h265sps.hasCropping) {
                         oss << "Cropping: left=" << a.h265sps.crop_left
                             << " right=" << a.h265sps.crop_right
@@ -305,8 +365,31 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
                     oss << "=== H.265 PPS Details ===\n";
                     oss << "PPS ID: " << (int)a.h265pps.pps_id << "\n";
                     oss << "SPS ID: " << (int)a.h265pps.sps_id << "\n";
+                    oss << "Dependent slice segments: " << a.h265pps.dependent_slice_segments_enabled_flag << "\n";
+                    oss << "Output flag present: " << a.h265pps.output_flag_present_flag << "\n";
+                    oss << "Extra slice header bits: " << (int)a.h265pps.num_extra_slice_header_bits << "\n";
+                    oss << "Sign data hiding: " << a.h265pps.sign_data_hiding_enabled_flag << "\n";
+                    oss << "CABAC init present: " << a.h265pps.cabac_init_present_flag << "\n";
+                    oss << "Ref idx L0/L1: " << a.h265pps.num_ref_idx_l0_default_active_minus1 + 1
+                        << "/" << a.h265pps.num_ref_idx_l1_default_active_minus1 + 1 << "\n";
                     oss << "Init QP: " << 26 + a.h265pps.init_qp_minus26 << "\n";
                     oss << "Constrained intra pred: " << a.h265pps.constrained_intra_pred_flag << "\n";
+                    oss << "Transform skip: " << a.h265pps.transform_skip_enabled_flag << "\n";
+                    oss << "CU QP delta: " << a.h265pps.cu_qp_delta_enabled_flag;
+                    if (a.h265pps.cu_qp_delta_enabled_flag)
+                        oss << " (depth " << a.h265pps.diff_cu_qp_delta_depth << ")";
+                    oss << "\n";
+                    oss << "Chroma QP offset (Cb/Cr): " << a.h265pps.pps_cb_qp_offset
+                        << "/" << a.h265pps.pps_cr_qp_offset << "\n";
+                    oss << "Weighted pred/bipred: " << a.h265pps.weighted_pred_flag
+                        << "/" << a.h265pps.weighted_bipred_flag << "\n";
+                    oss << "Tiles: " << a.h265pps.tiles_enabled_flag;
+                    if (a.h265pps.tiles_enabled_flag)
+                        oss << " (" << a.h265pps.num_tile_columns_minus1 + 1
+                            << " x " << a.h265pps.num_tile_rows_minus1 + 1 << ")";
+                    oss << "\n";
+                    oss << "Entropy coding sync: " << a.h265pps.entropy_coding_sync_enabled_flag << "\n";
+                    oss << "Deblocking filter control present: " << a.h265pps.deblocking_filter_control_present_flag << "\n";
                     oss << "Deblocking filter disabled: " << a.h265pps.pps_deblocking_filter_disabled_flag << "\n";
                 } else {
                     oss << "Failed to parse PPS\n";
@@ -322,9 +405,21 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
                 oss << "=== H.265 AUD (Access Unit Delimiter) ===\n";
                 break;
             case 39:
-            case 40:
-                oss << "=== H.265 SEI ===\n";
+            case 40: {
+                oss << "=== H.265 " << (nal.nalType == 39 ? "Prefix" : "Suffix") << " SEI ===\n";
+                std::vector<SeiMessage> msgs;
+                if (parseSeiMessages(nal, true, msgs) && !msgs.empty()) {
+                    for (size_t i = 0; i < msgs.size(); i++) {
+                        oss << "Message #" << i << ": type " << msgs[i].type
+                            << " (" << seiTypeName(msgs[i].type) << "), "
+                            << msgs[i].size << " bytes\n";
+                        oss << "    " << msgs[i].text << "\n";
+                    }
+                } else {
+                    oss << "No SEI messages found\n";
+                }
                 break;
+            }
             default:
                 oss << "=== H.265 NAL Type " << (int)nal.nalType << " (" << nal.typeName() << ") ===\n";
                 break;

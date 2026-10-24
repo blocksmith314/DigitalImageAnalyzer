@@ -30,6 +30,19 @@ bool BitReader::eof() const {
     return m_pos >= m_len;
 }
 
+bool BitReader::moreRbspData() const {
+    const size_t rem = remainingBits();
+    if (rem == 0) return false;
+    const size_t base = bitsRead();
+    for (size_t i = rem; i-- > 0;) {
+        const size_t absBit = base + i;
+        const uint8_t byte = m_data[absBit / 8];
+        if ((byte >> (7 - (int)(absBit % 8))) & 1)
+            return i > 0;   // rbsp_stop_one_bit found; data before it?
+    }
+    return false;
+}
+
 bool BitReader::readBit() {
     if (m_pos >= m_len) return false;
     uint8_t bit = (m_data[m_pos] >> (7 - m_bitPos)) & 1;

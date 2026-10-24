@@ -14,6 +14,7 @@ set(TEST_CORE_SOURCES
     ${CMAKE_SOURCE_DIR}/core/expgolomb.cpp
     ${CMAKE_SOURCE_DIR}/core/h264types.cpp
     ${CMAKE_SOURCE_DIR}/core/h265types.cpp
+    ${CMAKE_SOURCE_DIR}/core/seiparser.cpp
 )
 
 # Prints parsed H.264 slice headers (frame_num / POC)

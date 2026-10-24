@@ -14,6 +14,11 @@ public:
     bool readBit();
     bool eof() const;
 
+    size_t bitsRead() const { return m_pos * 8 + m_bitPos; }
+    size_t remainingBits() const { return m_len * 8 - bitsRead(); }
+    // True when data remains before rbsp_trailing_bits().
+    bool moreRbspData() const;
+
 private:
     std::vector<uint8_t> m_owned;
     const uint8_t *m_data;

@@ -33,6 +33,8 @@ qt_add_executable(DigitalImageAnalyzer
     core/h265types.cpp
     core/nalanalyzer.h
     core/nalanalyzer.cpp
+    core/seiparser.h
+    core/seiparser.cpp
 
     ffmpeg/decoder.h
     ffmpeg/decoder.cpp
