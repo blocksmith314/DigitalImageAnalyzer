@@ -52,7 +52,7 @@ bool parseH264SPS(const NALUnit &nal, H264SPS &out) {
     out.pic_order_cnt_type = (uint32_t)br.readUe();
 
     if (out.pic_order_cnt_type == 0) {
-        br.readUe();
+        out.log2_max_pic_order_cnt_lsb_minus4 = (uint32_t)br.readUe();
     } else if (out.pic_order_cnt_type == 1) {
         br.readBits(1);
         br.readSe();
@@ -121,10 +121,25 @@ bool parseH264PPS(const NALUnit &nal, H264PPS &out) {
     return true;
 }
 bool parseH264SliceHeader(const NALUnit &nal, const H264SPS &sps, H264SliceHeader &out) {
-    if (nal.data.size() < nal.startCodeLen + 3) return false;
+    if (nal.data.size() < nal.startCodeLen + 5) return false;
     size_t rbspOffset = nal.startCodeLen + 1;
     BitReader br(nal.data.data() + rbspOffset, nal.data.size() - rbspOffset);
+
     out.first_mb_in_slice = (uint32_t)br.readUe();
     out.slice_type = (uint32_t)br.readUe();
+    (void)br.readUe();
+
+    uint32_t frameNumBits = sps.log2_max_frame_num_minus4 + 4;
+    out.frame_num = (uint32_t)br.readBits(frameNumBits);
+
+    if (nal.nalType == 5) {
+        return true;
+    }
+
+    if (sps.pic_order_cnt_type == 0) {
+        uint32_t pocBits = sps.log2_max_pic_order_cnt_lsb_minus4 + 4;
+        out.pic_order_cnt_lsb = (uint32_t)br.readBits(pocBits);
+    }
+
     return true;
 }

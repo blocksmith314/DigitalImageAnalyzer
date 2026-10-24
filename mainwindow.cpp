@@ -57,14 +57,23 @@ void MainWindow::setupUI() {
     connect(quitAct, &QAction::triggered, this, &QWidget::close);
 
     m_nalList = new QTreeWidget();
-    m_nalList->setColumnCount(6);
-    m_nalList->setHeaderLabels({"#", "NAL Type", "NAL Name", "Size", "Offset", "Frame Type"});
-    m_nalList->header()->setStretchLastSection(true);
+    m_nalList->setColumnCount(9);
+    m_nalList->setHeaderLabels({"#", "NAL Type", "NAL Name", "Size", "Offset", "Frame Type", "DTS", "PTS", ""});
+    // 前 8 列保持固定宽度（NAL Name 在 buildNALList() 里按内容自适应）；
+    // 最后一列是空白占位列，由它吸收窗口多出来的宽度，这样全屏时表格会铺满
+    // 左侧面板，而各数据列不会被拉宽。
+    QHeaderView *hdr = m_nalList->header();
+    hdr->setStretchLastSection(false);
+    hdr->setSectionResizeMode(QHeaderView::Interactive);
+    hdr->setSectionResizeMode(8, QHeaderView::Stretch);
     m_nalList->setColumnWidth(0, 60);
     m_nalList->setColumnWidth(1, 60);
     m_nalList->setColumnWidth(2, 120);
     m_nalList->setColumnWidth(3, 80);
     m_nalList->setColumnWidth(4, 110);
+    m_nalList->setColumnWidth(5, 40);
+    m_nalList->setColumnWidth(6, 50);
+    m_nalList->setColumnWidth(7, 50);
     m_nalList->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_nalList->setAlternatingRowColors(true);
     connect(m_nalList, &QTreeWidget::currentItemChanged, this, &MainWindow::onNALSelected);
@@ -94,6 +103,21 @@ void MainWindow::setupUI() {
     m_stopBtn->setEnabled(false);
     connect(m_stopBtn, &QPushButton::clicked, this, &MainWindow::onStop);
 
+    m_speedCombo = new QComboBox();
+    m_speedCombo->setToolTip("Playback speed");
+    {
+        struct SpeedItem { const char *label; double value; };
+        static const SpeedItem speeds[] = {
+            {"0.25x", 0.25}, {"0.5x", 0.5}, {"0.75x", 0.75},
+            {"1x", 1.0}, {"1.5x", 1.5}, {"2x", 2.0}, {"4x", 4.0}};
+        for (const auto &s : speeds)
+            m_speedCombo->addItem(QString::fromUtf8(s.label), s.value);
+    }
+    m_speedCombo->setCurrentIndex(3);   // 默认 1x
+    m_speedCombo->setFixedWidth(80);
+    connect(m_speedCombo, &QComboBox::currentIndexChanged,
+            this, &MainWindow::onSpeedChanged);
+
     m_seekSlider = new QSlider(Qt::Horizontal);
     m_seekSlider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_seekSlider->setMinimumWidth(300);
@@ -106,6 +130,7 @@ void MainWindow::setupUI() {
     QHBoxLayout *controlRow = new QHBoxLayout();
     controlRow->addWidget(m_playBtn);
     controlRow->addWidget(m_stopBtn);
+    controlRow->addWidget(m_speedCombo);
     controlRow->addWidget(m_seekSlider, 1);
     controlRow->addWidget(m_frameInfoLabel);
 
@@ -208,9 +233,10 @@ void MainWindow::buildNALList() {
         items << QString::fromStdString(nal.typeName());
         items << QString::number(nal.size);
         items << QString("0x%1").arg(nal.offset, 8, 16, QChar('0')).toUpper();
-        items << (nal.frameIndex >= 0 && nal.frameType
-                      ? QString("%1 #%2").arg(QChar(nal.frameType)).arg(nal.frameIndex)
-                      : "-");
+        items << (nal.frameType ? QString(QChar(nal.frameType)) : QString("-"));
+        items << (nal.dtsIndex >= 0 ? QString::number(nal.dtsIndex) : QString("-"));
+        items << (nal.frameIndex >= 0 ? QString::number(nal.frameIndex) : QString("-"));
+        items << QString();   // 空白占位列
 
         QTreeWidgetItem *item = new QTreeWidgetItem(items);
         item->setData(0, Qt::UserRole, nal.frameIndex);
@@ -223,6 +249,9 @@ void MainWindow::buildNALList() {
         item->setTextAlignment(4, Qt::AlignRight | Qt::AlignVCenter);
         item->setTextAlignment(0, Qt::AlignRight | Qt::AlignVCenter);
         item->setTextAlignment(1, Qt::AlignRight | Qt::AlignVCenter);
+        item->setTextAlignment(5, Qt::AlignHCenter | Qt::AlignVCenter);
+        item->setTextAlignment(6, Qt::AlignRight | Qt::AlignVCenter);
+        item->setTextAlignment(7, Qt::AlignRight | Qt::AlignVCenter);
 
         QColor color;
         if (nal.codec == CodecType::H264) {
@@ -252,6 +281,9 @@ void MainWindow::buildNALList() {
 
         m_nalList->addTopLevelItem(item);
     }
+
+    // NAL Name 列按内容自适应宽度（其余列保持固定宽度）
+    m_nalList->resizeColumnToContents(2);
 }
 
 void MainWindow::updateStats() {
@@ -303,6 +335,9 @@ void MainWindow::startPlayer() {
         m_seekSlider->setEnabled(false);
         return;
     }
+
+    auto &nals = m_parser.nalUnitsMut();
+    buildNALList();
 
     m_frames.clear();
     DecodedFrame frame;
@@ -359,8 +394,24 @@ void MainWindow::highlightFrame(int frameIdx) {
         }
         if (match && !firstMatch) firstMatch = item;
     }
-    if (firstMatch) {
-        m_nalList->scrollToItem(firstMatch, QAbstractItemView::PositionAtCenter);
+    if (!firstMatch) return;
+
+    // 只在目标行不可见时才滚动，并延迟到事件循环之后执行。
+    // 若在 currentItemChanged（鼠标按下时）里立刻 scrollToItem，视图会在
+    // 鼠标按下和释放之间滚动，释放时指针已落在另一行上，选中就被改到那一行，
+    // 表现为“点第 40 帧却跳到别的帧”。行已可见时不滚动，点击就不会受影响。
+    QRect itemRect = m_nalList->visualItemRect(firstMatch);
+    if (!m_nalList->viewport()->rect().intersects(itemRect)) {
+        QTimer::singleShot(0, this, [this, frameIdx]() {
+            const QList<QTreeWidgetItem *> list =
+                m_nalList->findItems("*", Qt::MatchWildcard);
+            for (QTreeWidgetItem *it : list) {
+                if (it->data(0, Qt::UserRole).toInt() == frameIdx) {
+                    m_nalList->scrollToItem(it, QAbstractItemView::PositionAtCenter);
+                    break;
+                }
+            }
+        });
     }
 }
 
@@ -368,7 +419,7 @@ void MainWindow::onPlayPause() {
     if (m_totalFrames == 0) return;
 
     if (!m_isPlaying) {
-        m_playerTimer->start(qMax(1, int(1000.0 / m_frameRate)));
+        m_playerTimer->start(playerIntervalMs());
         m_playBtn->setText("Pause");
         m_isPlaying = true;
     } else {
@@ -376,6 +427,22 @@ void MainWindow::onPlayPause() {
         m_playBtn->setText("Play");
         m_isPlaying = false;
     }
+}
+
+int MainWindow::playerIntervalMs() const {
+    const double fps = m_frameRate > 0.0 ? m_frameRate : 30.0;
+    const double speed = m_playbackSpeed > 0.0 ? m_playbackSpeed : 1.0;
+    const double ms = 1000.0 / (fps * speed);
+    return qMax(1, (int)(ms + 0.5));
+}
+
+void MainWindow::onSpeedChanged(int index) {
+    if (!m_speedCombo) return;
+    double speed = m_speedCombo->itemData(index).toDouble();
+    if (speed <= 0.0) speed = 1.0;
+    m_playbackSpeed = speed;
+    if (m_isPlaying)                       // 播放中切换倍速立即生效
+        m_playerTimer->start(playerIntervalMs());
 }
 
 void MainWindow::onStop() {

@@ -12,6 +12,7 @@
 #include <QTimer>
 #include <QSlider>
 #include <QPushButton>
+#include <QComboBox>
 #include "bitstreamparser.h"
 #include "nalanalyzer.h"
 #include "decoder.h"
@@ -33,6 +34,7 @@ private slots:
     void onStop();
     void onSeek(int value);
     void onPlayerTick();
+    void onSpeedChanged(int index);
 
 private:
     static constexpr int MAX_RECENT_FILES = 10;
@@ -49,6 +51,7 @@ private:
     void startPlayer();
     void showFrame(const QImage &image, int frameIdx);
     void highlightFrame(int frameIdx);
+    int playerIntervalMs() const;
 
     BitstreamParser m_parser;
     NALAnalyzer m_analyzer;
@@ -70,10 +73,12 @@ private:
     QPushButton *m_playBtn = nullptr;
     QPushButton *m_stopBtn = nullptr;
     QSlider *m_seekSlider = nullptr;
+    QComboBox *m_speedCombo = nullptr;
 
     bool m_isPlaying = false;
     int m_totalFrames = 0;
     double m_frameRate = 30.0;
+    double m_playbackSpeed = 1.0;
     QSize m_videoSize;
     std::vector<DecodedFrame> m_frames;
 

@@ -16,6 +16,7 @@ struct H264SPS {
     bool constraint_set3_flag = false;
     uint32_t log2_max_frame_num_minus4 = 0;
     uint32_t pic_order_cnt_type = 0;
+    uint32_t log2_max_pic_order_cnt_lsb_minus4 = 0;
     uint32_t max_num_ref_frames = 0;
     uint32_t width = 0;
     uint32_t height = 0;
@@ -52,6 +53,8 @@ bool parseH264PPS(const NALUnit &nal, H264PPS &out);
 struct H264SliceHeader {
     uint32_t first_mb_in_slice = 0;
     uint32_t slice_type = 0;
+    uint32_t frame_num = 0;
+    uint32_t pic_order_cnt_lsb = 0;
     bool isIFrame() const { return slice_type % 5 == 2; }
     bool isBFrame() const { return slice_type % 5 == 1; }
     bool isPFrame() const { return slice_type % 5 == 0 || slice_type % 5 == 3 || slice_type % 5 == 4; }

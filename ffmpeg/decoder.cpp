@@ -1,5 +1,6 @@
 #include "decoder.h"
 #include <QImage>
+#include <QDebug>
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -236,4 +237,182 @@ bool FFmpegDecoder::seekToFrame(int targetIndex) {
         if (!decodeNextFrame(dummy)) return false;
     }
     return true;
+}
+
+std::unordered_map<int64_t, int> FFmpegDecoder::buildPktPosToDisplayIndexMap() {
+    std::unordered_map<int64_t, int> result;
+    FILE *fp = fopen("/tmp/da_debug.txt", "w");
+    auto LOG = [&](const char *fmt, ...) {
+        if (!fp) return;
+        va_list ap; va_start(ap, fmt);
+        vfprintf(fp, fmt, ap);
+        va_end(ap);
+    };
+
+    if (!m_impl || !m_impl->codecCtx || !m_impl->fmtCtx) {
+        LOG("RETURN EMPTY: no impl\n");
+        if (fp) fclose(fp);
+        return result;
+    }
+
+    LOG("START buildPktPosToDisplayIndexMap\n");
+
+    avformat_seek_file(m_impl->fmtCtx, -1, INT64_MIN, 0, INT64_MAX, 0);
+    avcodec_flush_buffers(m_impl->codecCtx);
+
+    std::vector<std::pair<int64_t, int>> pktPosList;
+    int dtsIdx = 0;
+
+    AVPacket *pkt = av_packet_alloc();
+    while (av_read_frame(m_impl->fmtCtx, pkt) >= 0) {
+        if (pkt->stream_index == m_impl->videoStreamIdx) {
+            pktPosList.push_back({pkt->pos, dtsIdx});
+            pkt->pts = dtsIdx;
+            pkt->dts = dtsIdx;
+            LOG("PKT dtsIdx=%d pos=%lld pkt.pts=%lld size=%d\n",
+                    dtsIdx, (long long)pkt->pos, (long long)pkt->pts, pkt->size);
+            avcodec_send_packet(m_impl->codecCtx, pkt);
+            dtsIdx++;
+        }
+        av_packet_unref(pkt);
+    }
+    av_packet_free(&pkt);
+    avcodec_send_packet(m_impl->codecCtx, nullptr);
+
+    std::unordered_map<int64_t, int> ptsToDisplay;
+    AVFrame *frame = av_frame_alloc();
+    int displayIdx = 0;
+    while (avcodec_receive_frame(m_impl->codecCtx, frame) >= 0) {
+        ptsToDisplay[frame->pts] = displayIdx;
+        LOG("FRAME dispIdx=%d frame.pts=%lld pict_type=%d\n",
+                displayIdx, (long long)frame->pts, frame->pict_type);
+        displayIdx++;
+        av_frame_unref(frame);
+    }
+    LOG("TOTAL: displayIdx=%d pktCount=%zu ptsMapSize=%zu\n",
+            displayIdx, pktPosList.size(), ptsToDisplay.size());
+    av_frame_free(&frame);
+
+    for (auto &[pos, didx] : pktPosList) {
+        auto it = ptsToDisplay.find(didx);
+        if (it != ptsToDisplay.end()) {
+            result[pos] = it->second;
+        } else {
+            LOG("MISS: pos=%lld dtsIdx=%d not found in ptsMap\n",
+                    (long long)pos, didx);
+        }
+    }
+    LOG("RESULT map size=%zu\n", result.size());
+    for (auto &[pos, disp] : result) {
+        LOG("  pos=%lld -> displayIdx=%d\n", (long long)pos, disp);
+    }
+
+    avformat_seek_file(m_impl->fmtCtx, -1, INT64_MIN, 0, INT64_MAX, 0);
+    avcodec_flush_buffers(m_impl->codecCtx);
+
+    if (fp) fclose(fp);
+    return result;
+}
+
+std::unordered_map<int64_t, int> FFmpegDecoder::buildPosToDisplayIndexMapFromNals(const std::vector<NALUnit> &nals) {
+    std::unordered_map<int64_t, int> result;
+    if (nals.empty()) return result;
+
+    int codecId = (m_codec == CodecType::H264) ? AV_CODEC_ID_H264 : AV_CODEC_ID_HEVC;
+    const AVCodec *c = avcodec_find_decoder((AVCodecID)codecId);
+    if (!c) return result;
+
+    AVCodecContext *cc = avcodec_alloc_context3(c);
+    if (!cc) return result;
+    if (m_impl->fmtCtx && m_impl->videoStreamIdx >= 0) {
+        avcodec_parameters_to_context(cc, m_impl->fmtCtx->streams[m_impl->videoStreamIdx]->codecpar);
+    }
+    cc->thread_count = 1;
+    cc->err_recognition = 0;
+    if (avcodec_open2(cc, c, nullptr) < 0) {
+        avcodec_free_context(&cc);
+        return result;
+    }
+
+    auto isSlice = [&](const NALUnit &n) -> bool {
+        if (n.codec == CodecType::H264) return n.nalType >= 1 && n.nalType <= 5;
+        return n.nalType <= 21;
+    };
+
+    bool prevWasSlice = false;
+    int dtsIdx = -1;
+    int totalPkts = 0;
+
+    std::vector<std::pair<int64_t, int>> pktPosList;
+
+    for (auto &nal : nals) {
+        if (isSlice(nal)) {
+            if (!prevWasSlice) dtsIdx++;
+            AVPacket *pkt = av_packet_alloc();
+            pkt->data = (uint8_t *)nal.data.data();
+            pkt->size = (int)nal.data.size();
+            pkt->pos = (int64_t)nal.offset;
+            pkt->pts = dtsIdx;
+            pkt->dts = dtsIdx;
+            pkt->flags = (nal.nalType == 5 || (nal.codec == CodecType::H265 && (nal.nalType >= 19 && nal.nalType <= 21)))
+                             ? AV_PKT_FLAG_KEY : 0;
+            pktPosList.push_back({nal.offset, dtsIdx});
+            if (totalPkts < 10 || totalPkts == 0) {
+                qDebug() << QString("[map] send pkt dtsIdx=%1 pos=%2 nalType=%3 pts=%4")
+                                .arg(dtsIdx).arg(nal.offset).arg(nal.nalType).arg(pkt->pts);
+            }
+            avcodec_send_packet(cc, pkt);
+            av_packet_unref(pkt);
+            av_free(pkt);
+            totalPkts++;
+            prevWasSlice = true;
+        } else {
+            prevWasSlice = false;
+        }
+    }
+
+    qDebug() << QString("[map] total pkts sent=%1 total unique dtsIdx=%2")
+                    .arg(totalPkts).arg(dtsIdx + 1);
+
+    avcodec_send_packet(cc, nullptr);
+
+    std::unordered_map<int64_t, int> ptsToDisplay;
+    AVFrame *frame = av_frame_alloc();
+    int displayIdx = 0;
+    while (avcodec_receive_frame(cc, frame) >= 0) {
+        ptsToDisplay[frame->pts] = displayIdx;
+        if (displayIdx < 10) {
+            qDebug() << QString("[map] recv frame displayIdx=%1 frame.pts=%2 pict_type=%3")
+                            .arg(displayIdx).arg(frame->pts).arg(frame->pict_type);
+        }
+        displayIdx++;
+        av_frame_unref(frame);
+    }
+    qDebug() << QString("[map] total frames recv=%1").arg(displayIdx);
+    av_frame_free(&frame);
+
+    qDebug() << "[map] ptsToDisplay contents:";
+    for (auto &[pts, didx] : ptsToDisplay) {
+        if (didx < 10) {
+            qDebug() << QString("  pts=%1 -> displayIdx=%2").arg(pts).arg(didx);
+        }
+    }
+
+    int matched = 0;
+    for (auto &[pos, didx] : pktPosList) {
+        auto it = ptsToDisplay.find(didx);
+        if (it != ptsToDisplay.end()) {
+            result[pos] = it->second;
+            matched++;
+        }
+    }
+    qDebug() << QString("[map] matched %1 / %2 pkts").arg(matched).arg(pktPosList.size());
+
+    if (!result.empty()) {
+        auto it = result.begin();
+        qDebug() << QString("[map] sample result: pos=%1 -> frameIdx=%2").arg(it->first).arg(it->second);
+    }
+
+    avcodec_free_context(&cc);
+    return result;
 }

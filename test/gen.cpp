@@ -234,13 +234,12 @@ int main(int argc, char **argv) {
     enc->framerate = (AVRational){fps, 1};
     enc->pix_fmt = AV_PIX_FMT_YUV420P;
     enc->gop_size = keyint;
-    enc->max_b_frames = 0;
+    enc->max_b_frames = 2;
     enc->bit_rate = 500000;
     enc->thread_count = 1;
 
     if (!is_h265) {
         av_opt_set(enc->priv_data, "preset", "veryfast", 0);
-        av_opt_set(enc->priv_data, "tune", "zerolatency", 0);
         av_opt_set(enc->priv_data, "scenecut", "0", 0);
         av_opt_set(enc->priv_data, "keyint_min", "0", 0);
         av_opt_set(enc->priv_data, "slices", "1", 0);
@@ -324,6 +323,10 @@ int main(int argc, char **argv) {
         draw_filled_rect_yuv(frame, ix, iy, (int)box_w, (int)box_h,
                              235, 80, 240);
 
+        char pos[48];
+        snprintf(pos, sizeof(pos), "F=%d", f);
+        draw_text_yuv(frame, pos, 8, 8, 235, 128, 128, 2);
+
         char label[32];
         format_number(label, f, 4);
         int label_scale = 2;
@@ -331,26 +334,19 @@ int main(int argc, char **argv) {
         draw_text_yuv(frame, label, width - label_w - 8, 8,
                       235, 128, 128, label_scale);
 
-        char pos[48];
-        snprintf(pos, sizeof(pos), "FR=%d", f);
-        draw_text_yuv(frame, pos, 8, 8, 235, 128, 128, 2);
-
         snprintf(pos, sizeof(pos), "%dX%d %dFPS", width, height, fps);
         draw_text_yuv(frame, pos, 8, height - 22, 235, 128, 128, 2);
 
-        char type_label[16];
+        char key_label[16];
         if (f == 0 || f % keyint == 0) {
-            snprintf(type_label, sizeof(type_label), "I");
-        } else {
-            snprintf(type_label, sizeof(type_label), "P");
+            snprintf(key_label, sizeof(key_label), "KEY");
+            draw_text_yuv(frame, key_label, width - 50, height - 22, 235, 128, 128, 2);
         }
-        draw_text_yuv(frame, type_label, width - 20, height - 22, 235, 128, 128, 2);
 
         frame->pts = f;
+        frame->pict_type = AV_PICTURE_TYPE_NONE;
         if (f == 0 || f % keyint == 0) {
-            frame->pict_type = AV_PICTURE_TYPE_I;
-        } else {
-            frame->pict_type = AV_PICTURE_TYPE_P;
+            frame->flags |= AV_FRAME_FLAG_KEY;
         }
 
         avcodec_send_frame(enc, frame);

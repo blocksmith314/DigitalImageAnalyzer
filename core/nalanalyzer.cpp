@@ -1,5 +1,6 @@
 #include "nalanalyzer.h"
 #include <sstream>
+#include <algorithm>
 
 void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
     m_stats = StreamStats();
@@ -13,44 +14,8 @@ void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
     m_stats.codec = nals.front().codec;
     m_stats.totalNals = (uint32_t)nals.size();
 
-    int frameIndex = -1;
-    bool prevWasSlice = false;
-
     for (auto &nal : nals) {
         m_stats.totalBytes += nal.size;
-
-        bool isSlice = false;
-        bool isIDR = false;
-        H264SliceHeader sh;
-
-        if (nal.codec == CodecType::H264) {
-            isSlice = (nal.nalType >= 1 && nal.nalType <= 5);
-            isIDR = (nal.nalType == 5);
-        } else {
-            isSlice = (nal.nalType <= 21 && nal.nalType >= 0);
-            isIDR = (nal.nalType == 19 || nal.nalType == 20 || nal.nalType == 21);
-        }
-
-        if (isSlice) {
-            if (!prevWasSlice) frameIndex++;
-            if (nal.codec == CodecType::H264 && parseH264SliceHeader(nal, H264SPS(), sh)) {
-                if (sh.first_mb_in_slice == 0 && prevWasSlice) frameIndex++;
-            }
-            nal.frameIndex = frameIndex;
-            if (isIDR) {
-                nal.frameType = 'I';
-            } else if (nal.codec == CodecType::H264) {
-                nal.frameType = sh.frameTypeChar();
-            } else {
-                nal.frameType = 'P';
-            }
-            prevWasSlice = true;
-        } else {
-            nal.frameIndex = -1;
-            nal.frameType = 0;
-            prevWasSlice = false;
-        }
-
         NALAnalysis a = analyzeOne(nal);
         if (a.isSPS) {
             m_stats.spsCount++;
@@ -84,14 +49,136 @@ void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
             if (nal.nalType == 5) m_stats.idrCount++;
             if (nal.nalType == 6) m_stats.seiCount++;
             if (nal.nalType == 9) m_stats.audCount++;
-            if (nal.nalType >= 1 && nal.nalType <= 5) m_stats.frameCount++;
         } else {
             if (nal.nalType == 19 || nal.nalType == 20 || nal.nalType == 21) m_stats.idrCount++;
             if (nal.nalType == 39 || nal.nalType == 40) m_stats.seiCount++;
             if (nal.nalType == 35) m_stats.audCount++;
-            if (nal.nalType >= 0 && nal.nalType <= 21) m_stats.frameCount++;
         }
     }
+
+    bool isH264 = (m_stats.codec == CodecType::H264);
+
+    struct FrameInfo {
+        std::vector<NALUnit*> slices;
+        uint32_t poc_lsb = 0;
+        bool pocValid = false;
+        bool isIdr = false;
+        char frameType = 'P';
+    };
+    std::vector<FrameInfo> frames;
+    FrameInfo *cur = nullptr;
+
+    H264SPS activeSps;
+    if (isH264 && !m_h264SpsMap.empty()) activeSps = m_h264SpsMap.begin()->second;
+
+    for (auto &nal : nals) {
+        bool isSlice = isH264 ? (nal.nalType >= 1 && nal.nalType <= 5) : (nal.nalType <= 21);
+        if (!isSlice) {
+            nal.frameIndex = -1;
+            nal.dtsIndex = -1;
+            nal.frameType = 0;
+            continue;
+        }
+
+        bool isNew = !cur;
+        uint32_t poc = 0;
+        bool pocOk = false;
+        bool idr = false;
+        char ft = 'P';
+
+        if (isH264) {
+            H264SliceHeader sh;
+            if (parseH264SliceHeader(nal, activeSps, sh)) {
+                bool mb0 = (sh.first_mb_in_slice == 0);
+                if (mb0) isNew = true;
+                poc = sh.pic_order_cnt_lsb;
+                pocOk = true;
+                ft = sh.frameTypeChar();
+            }
+            idr = (nal.nalType == 5);
+            if (idr) ft = 'I';
+        } else {
+            // H.265: IRAP (BLA/IDR/CRA) 会重置 POC，作为分段边界
+            idr = (nal.nalType >= 16 && nal.nalType <= 21);
+            if (idr) ft = 'I';
+        }
+
+        if (isNew) {
+            frames.emplace_back();
+            cur = &frames.back();
+            cur->isIdr = idr;
+        } else if (idr) {
+            cur->isIdr = true;
+        }
+        cur->slices.push_back(&nal);
+        if (pocOk) { cur->poc_lsb = poc; cur->pocValid = true; }
+        cur->frameType = ft;
+    }
+
+    if (!frames.empty()) {
+        bool allPoc = isH264;
+        for (auto &f : frames) {
+            if (!f.pocValid) { allPoc = false; break; }
+        }
+
+        if (allPoc && frames.size() > 1) {
+            // 帧号 = 显示顺序。
+            // pic_order_cnt_lsb 只在一个 coded video sequence（IDR 之间）内有效，
+            // 每个 IDR 会把它重置为 0；所以必须按 IDR 分段，段内按 POC 排序，
+            // 段间累加帧号，否则不同 GOP 中 POC 相同的帧会被混在一起排序。
+            const uint32_t maxLsb =
+                1u << (activeSps.log2_max_pic_order_cnt_lsb_minus4 + 4);
+            std::vector<int64_t> fullPoc(frames.size(), 0);
+
+            int nextIdx = 0;
+            int segStart = 0;
+            int32_t msb = 0;
+            uint32_t prevLsb = 0;
+            for (int i = 1; i <= (int)frames.size(); i++) {
+                bool boundary = (i == (int)frames.size()) || frames[i].isIdr;
+                if (!boundary) continue;
+
+                // 段 [segStart, i)：解码顺序下展开 POC LSB（处理长 GOP 回绕）
+                msb = 0;
+                prevLsb = frames[segStart].poc_lsb;
+                fullPoc[segStart] = (int64_t)prevLsb;
+                for (int k = segStart + 1; k < i; k++) {
+                    uint32_t lsb = frames[k].poc_lsb;
+                    if (lsb < prevLsb && (prevLsb - lsb) >= maxLsb / 2) {
+                        msb += (int32_t)maxLsb;
+                    } else if (lsb > prevLsb && (lsb - prevLsb) > maxLsb / 2) {
+                        msb -= (int32_t)maxLsb;
+                    }
+                    fullPoc[k] = (int64_t)msb + lsb;
+                    prevLsb = lsb;
+                }
+
+                std::vector<int> idxs;
+                for (int k = segStart; k < i; k++) idxs.push_back(k);
+                std::stable_sort(idxs.begin(), idxs.end(), [&](int a, int b) {
+                    return fullPoc[a] < fullPoc[b];
+                });
+                for (int k = 0; k < (int)idxs.size(); k++) {
+                    for (auto *s : frames[idxs[k]].slices) {
+                        s->frameIndex = nextIdx++;
+                        s->dtsIndex = idxs[k];
+                        s->frameType = frames[idxs[k]].frameType;
+                    }
+                }
+                segStart = i;
+            }
+        } else {
+            for (int i = 0; i < (int)frames.size(); i++) {
+                for (auto *s : frames[i].slices) {
+                    s->frameIndex = i;
+                    s->dtsIndex = i;
+                    s->frameType = frames[i].frameType;
+                }
+            }
+        }
+    }
+
+    m_stats.frameCount = (uint32_t)frames.size();
 }
 
 NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {

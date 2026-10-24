@@ -3,6 +3,7 @@
 #include <QImage>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 struct DecodedFrame {
     int64_t pts = 0;
@@ -24,6 +25,9 @@ public:
     bool seekToFrame(int targetIndex);
 
     bool decodeKeyframes(std::vector<DecodedFrame> &out, int maxFrames = 10);
+
+    std::unordered_map<int64_t, int> buildPktPosToDisplayIndexMap();
+    std::unordered_map<int64_t, int> buildPosToDisplayIndexMapFromNals(const std::vector<NALUnit> &nals);
 
     int frameCount() const { return m_frameCount; }
     int width() const { return m_width; }
