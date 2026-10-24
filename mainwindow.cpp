@@ -17,6 +17,7 @@
 #include <QSettings>
 #include <QCloseEvent>
 #include <QResizeEvent>
+#include <QFont>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), m_parser(CodecType::H264) {
@@ -59,6 +60,11 @@ void MainWindow::setupUI() {
     m_nalList->setColumnCount(6);
     m_nalList->setHeaderLabels({"#", "NAL Type", "NAL Name", "Size", "Offset", "Frame Type"});
     m_nalList->header()->setStretchLastSection(true);
+    m_nalList->setColumnWidth(0, 60);
+    m_nalList->setColumnWidth(1, 60);
+    m_nalList->setColumnWidth(2, 120);
+    m_nalList->setColumnWidth(3, 80);
+    m_nalList->setColumnWidth(4, 110);
     m_nalList->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_nalList->setAlternatingRowColors(true);
     connect(m_nalList, &QTreeWidget::currentItemChanged, this, &MainWindow::onNALSelected);
@@ -198,13 +204,22 @@ void MainWindow::buildNALList() {
         items << QString::number(nal.nalType);
         items << QString::fromStdString(nal.typeName());
         items << QString::number(nal.size);
-        items << QString("0x%1").arg(nal.offset, 0, 16);
+        items << QString("0x%1").arg(nal.offset, 8, 16, QChar('0')).toUpper();
         items << (nal.frameIndex >= 0 && nal.frameType
                       ? QString("%1 #%2").arg(QChar(nal.frameType)).arg(nal.frameIndex)
                       : "-");
 
         QTreeWidgetItem *item = new QTreeWidgetItem(items);
         item->setData(0, Qt::UserRole, nal.frameIndex);
+
+        static QFont monoFont("Menlo");
+        monoFont.setStyleHint(QFont::Monospace);
+        item->setFont(3, monoFont);
+        item->setFont(4, monoFont);
+        item->setTextAlignment(3, Qt::AlignRight | Qt::AlignVCenter);
+        item->setTextAlignment(4, Qt::AlignRight | Qt::AlignVCenter);
+        item->setTextAlignment(0, Qt::AlignRight | Qt::AlignVCenter);
+        item->setTextAlignment(1, Qt::AlignRight | Qt::AlignVCenter);
 
         QColor color;
         if (nal.codec == CodecType::H264) {
@@ -233,10 +248,6 @@ void MainWindow::buildNALList() {
         item->setData(0, Qt::UserRole + 1, color.isValid() ? color : QVariant());
 
         m_nalList->addTopLevelItem(item);
-    }
-
-    for (int c = 0; c < m_nalList->columnCount(); c++) {
-        m_nalList->resizeColumnToContents(c);
     }
 }
 

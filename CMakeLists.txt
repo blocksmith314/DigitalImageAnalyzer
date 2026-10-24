@@ -57,3 +57,8 @@ set_target_properties(DigitalImageAnalyzer PROPERTIES
     MACOSX_BUNDLE TRUE
     WIN32_EXECUTABLE TRUE
 )
+
+option(BUILD_TEST_GEN "Build H.264/H.265 test stream generator" ON)
+if(BUILD_TEST_GEN)
+    add_subdirectory(test)
+endif()
