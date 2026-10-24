@@ -1,4 +1,6 @@
 #include "mainwindow.h"
+#include "annexb.h"
+#include "audio.h"
 #include <QMenuBar>
 #include <QToolBar>
 #include <QSplitter>
@@ -18,6 +20,16 @@
 #include <QCloseEvent>
 #include <QResizeEvent>
 #include <QFont>
+#include <QStatusBar>
+#include <QGuiApplication>
+#include <QApplication>
+#include <QProgressDialog>
+#include <QElapsedTimer>
+#include <QShortcut>
+#include <QStyle>
+#include <QSpinBox>
+#include <QVBoxLayout>
+#include <cstdio>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), m_parser(CodecType::H264) {
@@ -94,10 +106,20 @@ void MainWindow::setupUI() {
     m_videoLabel->setMinimumHeight(240);
     m_videoLabel->setStyleSheet("border: 1px solid #cccccc; background: #1a1a1a; color: #aaaaaa;");
     m_videoLabel->setScaledContents(false);
+    m_videoLabel->installEventFilter(this);
+    m_videoLabel->setToolTip("Double-click for fullscreen");
     m_videoLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
     m_playerTimer = new QTimer(this);
     connect(m_playerTimer, &QTimer::timeout, this, &MainWindow::onPlayerTick);
+    m_audio = new AudioPlayer(this);
+
+    auto *prevShortcut = new QShortcut(QKeySequence(Qt::Key_Left), this);
+    connect(prevShortcut, &QShortcut::activated, this, &MainWindow::onStepBackward);
+    auto *nextShortcut = new QShortcut(QKeySequence(Qt::Key_Right), this);
+    connect(nextShortcut, &QShortcut::activated, this, &MainWindow::onStepForward);
+    auto *playShortcut = new QShortcut(QKeySequence(Qt::Key_Space), this);
+    connect(playShortcut, &QShortcut::activated, this, &MainWindow::onPlayPause);
 
     m_playBtn = new QPushButton("Play");
     m_playBtn->setEnabled(false);
@@ -106,6 +128,18 @@ void MainWindow::setupUI() {
     m_stopBtn = new QPushButton("Stop");
     m_stopBtn->setEnabled(false);
     connect(m_stopBtn, &QPushButton::clicked, this, &MainWindow::onStop);
+
+    m_prevFrameBtn = new QPushButton("\u25c0");
+    m_prevFrameBtn->setEnabled(false);
+    m_prevFrameBtn->setFixedWidth(32);
+    m_prevFrameBtn->setToolTip("Step backward one frame");
+    connect(m_prevFrameBtn, &QPushButton::clicked, this, &MainWindow::onStepBackward);
+
+    m_nextFrameBtn = new QPushButton("\u25b6");
+    m_nextFrameBtn->setEnabled(false);
+    m_nextFrameBtn->setFixedWidth(32);
+    m_nextFrameBtn->setToolTip("Step forward one frame");
+    connect(m_nextFrameBtn, &QPushButton::clicked, this, &MainWindow::onStepForward);
 
     m_speedCombo = new QComboBox();
     m_speedCombo->setToolTip("Playback speed");
@@ -134,6 +168,24 @@ void MainWindow::setupUI() {
     QHBoxLayout *controlRow = new QHBoxLayout();
     controlRow->addWidget(m_playBtn);
     controlRow->addWidget(m_stopBtn);
+    m_fullscreenBtn = new QPushButton();
+    m_fullscreenBtn->setFixedWidth(32);
+    m_fullscreenBtn->setIcon(style()->standardIcon(QStyle::SP_TitleBarMaxButton));
+    m_fullscreenBtn->setToolTip("Toggle fullscreen (double-click video, Esc to exit)");
+    connect(m_fullscreenBtn, &QPushButton::clicked, this, &MainWindow::toggleFullscreen);
+
+    controlRow->addWidget(m_prevFrameBtn);
+    controlRow->addWidget(m_nextFrameBtn);
+    controlRow->addWidget(m_fullscreenBtn);
+
+    auto *stepLabel = new QLabel("Step:");
+    stepLabel->setToolTip("Frames skipped by the arrow keys");
+    m_stepSpin = new QSpinBox();
+    m_stepSpin->setRange(1, 1000);
+    m_stepSpin->setValue(1);
+    m_stepSpin->setFixedWidth(56);
+    controlRow->addWidget(stepLabel);
+    controlRow->addWidget(m_stepSpin);
     controlRow->addWidget(m_speedCombo);
     controlRow->addWidget(m_seekSlider, 1);
     controlRow->addWidget(m_frameInfoLabel);
@@ -183,6 +235,8 @@ void MainWindow::setupUI() {
 
     setCentralWidget(mainSplit);
 
+    m_timeInfoLabel = new QLabel();
+    statusBar()->addWidget(m_timeInfoLabel);
     m_fileInfoLabel = new QLabel("No file loaded");
     statusBar()->addWidget(m_fileInfoLabel, 1);
     loadRecentFiles();
@@ -192,34 +246,98 @@ void MainWindow::setupUI() {
 void MainWindow::openFile() {
     QString path = QFileDialog::getOpenFileName(
         this, "Open Video File", "",
-        "Video Files (*.h264 *.h265 *.264 *.265 *.hevc);;All Files (*)");
+        "Video Files (*.h264 *.h265 *.264 *.265 *.hevc *.mp4 *.mov *.m4v *.ts *.mkv);;All Files (*)");
     if (path.isEmpty()) return;
     if (loadFile(path)) addRecentFile(path);
 }
 
 bool MainWindow::loadFile(const QString &path) {
     std::string sp = path.toStdString();
-    BitstreamParser detectParser(CodecType::H264);
-    std::vector<uint8_t> probeBuf(4096);
-    QFile f(path);
-    if (f.open(QIODevice::ReadOnly)) {
-        f.read(reinterpret_cast<char *>(probeBuf.data()), 4096);
-        f.close();
-    }
-    CodecType detected = BitstreamParser::detectCodec(probeBuf.data(), probeBuf.size());
 
-    m_parser = BitstreamParser(detected);
-    if (!m_parser.parseFile(sp)) {
-        QMessageBox::critical(this, "Error", QString::fromStdString(m_parser.lastError()));
+    QProgressDialog dlg(QString("Loading %1...").arg(QFileInfo(path).fileName()),
+                        "Cancel", 0, 100, this);
+    dlg.setWindowTitle("Loading");
+    dlg.setWindowModality(Qt::WindowModal);
+    dlg.setMinimumDuration(200);
+    dlg.setAutoClose(false);
+    dlg.setAutoReset(false);
+
+    auto progress = [&dlg](double fraction) -> bool {
+        if (dlg.wasCanceled()) return false;
+        if (fraction < 0.0) {
+            dlg.setRange(0, 0);
+        } else {
+            dlg.setRange(0, 100);
+            dlg.setValue((int)qBound(0.0, fraction * 100.0, 100.0));
+        }
+        QApplication::processEvents();
+        return !dlg.wasCanceled();
+    };
+
+    // Raw Annex B streams are parsed directly; containers (MP4/MOV/MKV/TS...)
+    // are read through length-prefixed NAL units (AVCC/hvcC) from the original
+    // file, so no temporary Annex B copy is written.
+    QElapsedTimer timer;
+    timer.start();
+    CodecType detected = CodecType::H264;
+    bool rawAnnexB = false;
+    std::string probeError;
+    if (!probeVideoFile(sp, detected, rawAnnexB, probeError)) {
+        dlg.close();
+        QMessageBox::critical(this, "Error", QString::fromStdString(probeError));
         return false;
     }
 
+    const qint64 probeMs = timer.restart();
+    m_parser = BitstreamParser(detected);
+    dlg.setLabelText(QString("Scanning %1...").arg(QFileInfo(path).fileName()));
+    bool parsed = false;
+    if (rawAnnexB) {
+        parsed = m_parser.parseFile(sp, progress);
+    } else {
+        // Plain MP4: read the moov sample table and touch only NAL headers.
+        parsed = m_parser.parseMp4Indexed(sp, detected, progress);
+        if (!parsed && m_parser.lastError() != "Cancelled") {
+            // Fragmented/unsupported layout: fall back to a full demux.
+            parsed = m_parser.parseAvcc(sp, detected, progress);
+        }
+    }
+    if (!parsed) {
+        dlg.close();
+        QMessageBox::critical(this, "Error",
+                              QString::fromStdString(m_parser.lastError()));
+        return false;
+    }
+    const qint64 demuxMs = timer.restart();
+
     m_currentPath = sp;
-    m_analyzer.analyzeAll(m_parser.nalUnitsMut());
+    dlg.setLabelText(QString("Analyzing %1...").arg(QFileInfo(path).fileName()));
+    if (!m_analyzer.analyzeAll(m_parser, progress)) {
+        dlg.close();
+        QMessageBox::critical(this, "Error", "Loading cancelled");
+        return false;
+    }
+    const qint64 analyzeMs = timer.restart();
+    dlg.close();
+
+    // The NAL metadata is enough for the UI; drop resident file pages so a
+    // multi-GB stream does not stay pinned in memory.
+    m_parser.releaseMappedPages();
 
     buildNALList();
     updateStats();
     startPlayer();
+    if (m_audio) m_audio->open(m_currentPath);
+
+    const qint64 totalMs = probeMs + demuxMs + analyzeMs + timer.restart();
+    if (m_timeInfoLabel) {
+        m_timeInfoLabel->setText(
+            QString("Loaded in %1 s  (probe %2 s, read %3 s, analyze %4 s)  ")
+                .arg(totalMs / 1000.0, 0, 'f', 1)
+                .arg(probeMs / 1000.0, 0, 'f', 1)
+                .arg(demuxMs / 1000.0, 0, 'f', 1)
+                .arg(analyzeMs / 1000.0, 0, 'f', 1));
+    }
 
     QFileInfo fi(path);
     auto &stats = m_analyzer.stats();
@@ -238,10 +356,18 @@ bool MainWindow::loadFile(const QString &path) {
 }
 
 void MainWindow::buildNALList() {
+    m_nalList->setUpdatesEnabled(false);
     m_nalList->clear();
+    m_frameRows.clear();
+    m_highlightedRows.clear();
+
     const auto &nals = m_parser.nalUnits();
-    for (size_t i = 0; i < nals.size(); i++) {
-        const auto &nal = nals[i];
+    const int total = (int)nals.size();
+    const int maxRows = 50000;          // keep the widget usable for huge files
+    const int shown = qMin(total, maxRows);
+
+    for (int i = 0; i < shown; i++) {
+        const auto &nal = nals[(size_t)i];
         QStringList items;
         items << QString::number(i);
         items << QString::number(nal.nalType);
@@ -295,9 +421,17 @@ void MainWindow::buildNALList() {
         item->setData(0, Qt::UserRole + 1, color.isValid() ? color : QVariant());
 
         m_nalList->addTopLevelItem(item);
+        if (nal.frameIndex >= 0) m_frameRows[nal.frameIndex].push_back(i);
     }
 
-    // Auto-fit NAL Name to its content
+    if (total > shown) {
+        QTreeWidgetItem *item = new QTreeWidgetItem(m_nalList);
+        item->setText(0, "...");
+        item->setText(2, QString("%1 more NAL units not listed").arg(total - shown));
+        item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
+    }
+
+    m_nalList->setUpdatesEnabled(true);
     m_nalList->resizeColumnToContents(2);
 }
 
@@ -366,33 +500,30 @@ void MainWindow::startPlayer() {
     auto &stats = m_analyzer.stats();
     m_playerTimer->stop();
     m_isPlaying = false;
+    m_playBtn->setText("Play");
 
     m_playerDecoder.close();
     if (!m_playerDecoder.openFile(m_currentPath, stats.codec)) {
         m_videoLabel->setText(QString("Decoder error: %1").arg(m_playerDecoder.lastError().c_str()));
         m_playBtn->setEnabled(false);
         m_stopBtn->setEnabled(false);
+        m_prevFrameBtn->setEnabled(false);
+        m_nextFrameBtn->setEnabled(false);
         m_seekSlider->setEnabled(false);
         return;
     }
 
-    auto &nals = m_parser.nalUnitsMut();
-    buildNALList();
-
-    m_frames.clear();
-    DecodedFrame frame;
-    while (m_playerDecoder.decodeNextFrame(frame)) {
-        m_frames.push_back(std::move(frame));
-    }
-    m_totalFrames = m_frames.size();
+    // No upfront decode: frames are decoded on demand while playing/seeking.
+    m_totalFrames = (int)stats.frameCount;
     m_frameRate = m_playerDecoder.frameRate();
-    m_playerDecoder.close();
     updateStats();   // refresh stats that depend on decoded frames / frame rate
 
-    if (m_frames.empty()) {
-        m_videoLabel->setText("No frames decoded");
+    if (m_totalFrames <= 0) {
+        m_videoLabel->setText("No frames found");
         m_playBtn->setEnabled(false);
         m_stopBtn->setEnabled(false);
+        m_prevFrameBtn->setEnabled(false);
+        m_nextFrameBtn->setEnabled(false);
         m_seekSlider->setRange(0, 0);
         return;
     }
@@ -401,13 +532,18 @@ void MainWindow::startPlayer() {
     m_seekSlider->setValue(0);
     m_playBtn->setEnabled(true);
     m_stopBtn->setEnabled(true);
+    m_prevFrameBtn->setEnabled(true);
+    m_nextFrameBtn->setEnabled(true);
+    m_seekSlider->setEnabled(true);
 
     m_videoSize = m_videoLabel->size();
-    showFrame(m_frames[0].image, 0);
+    m_currentFrameIndex = -1;
+    showFrameAt(0);
 }
 
 void MainWindow::showFrame(const QImage &image, int frameIdx) {
     if (image.isNull()) return;
+    m_currentImage = image;
     QSize target = m_videoSize.isValid() ? m_videoSize : m_videoLabel->size();
     QImage scaled = image.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     m_videoLabel->setPixmap(QPixmap::fromImage(scaled));
@@ -417,39 +553,75 @@ void MainWindow::showFrame(const QImage &image, int frameIdx) {
         m_seekSlider->setValue(frameIdx);
     }
     highlightFrame(frameIdx);
+    if (m_fullscreen) updateFullscreenFrame();
+}
+
+void MainWindow::showFrameAt(int idx) {
+    if (m_totalFrames <= 0) return;
+    idx = qBound(0, idx, m_totalFrames - 1);
+    if (idx == m_currentFrameIndex) return;
+
+    // Decode sequentially when moving forward by one; otherwise seek.
+    const bool jump = (idx < m_currentFrameIndex || idx > m_currentFrameIndex + 1);
+    if (jump) {
+        if (!m_playerDecoder.seekToFrame(idx)) return;
+    }
+
+    DecodedFrame frame;
+    if (!m_playerDecoder.decodeNextFrame(frame)) {
+        // End of decodable frames (container may have fewer than the NAL count).
+        m_playerTimer->stop();
+        m_isPlaying = false;
+        m_playBtn->setText("Play");
+        return;
+    }
+    m_currentFrameIndex = idx;
+    showFrame(frame.image, idx);
+
+    if (jump && m_audio && m_audio->hasAudio() && m_frameRate > 0.0) {
+        m_audio->seekTo((double)idx / m_frameRate);
+    }
 }
 
 void MainWindow::highlightFrame(int frameIdx) {
-    QList<QTreeWidgetItem *> items = m_nalList->findItems("*", Qt::MatchWildcard);
-    QTreeWidgetItem *firstMatch = nullptr;
-    for (QTreeWidgetItem *item : items) {
-        int fIdx = item->data(0, Qt::UserRole).toInt();
-        bool match = (fIdx == frameIdx && frameIdx >= 0);
-        QColor origColor = item->data(0, Qt::UserRole + 1).value<QColor>();
-        QColor bg = match ? QColor(255, 165, 30) : origColor;
+    // Restore previously highlighted rows only (cheap for large streams).
+    for (int row : m_highlightedRows) {
+        QTreeWidgetItem *item = m_nalList->topLevelItem(row);
+        if (!item) continue;
+        const QColor origColor = item->data(0, Qt::UserRole + 1).value<QColor>();
         for (int c = 0; c < item->columnCount(); c++) {
-            if (bg.isValid())
-                item->setBackground(c, bg);
+            if (origColor.isValid())
+                item->setBackground(c, origColor);
             else
                 item->setBackground(c, QBrush());
         }
-        if (match && !firstMatch) firstMatch = item;
+    }
+    m_highlightedRows.clear();
+
+    QTreeWidgetItem *firstMatch = nullptr;
+    if (frameIdx >= 0) {
+        auto it = m_frameRows.find(frameIdx);
+        if (it != m_frameRows.end()) {
+            for (int row : it->second) {
+                QTreeWidgetItem *item = m_nalList->topLevelItem(row);
+                if (!item) continue;
+                for (int c = 0; c < item->columnCount(); c++)
+                    item->setBackground(c, QColor(255, 165, 30));
+                m_highlightedRows.push_back(row);
+                if (!firstMatch) firstMatch = item;
+            }
+        }
     }
     if (!firstMatch) return;
 
     // Scroll to the highlighted row only when it is off-screen, and defer it
     // so it does not interfere with the click that selected the row.
-    QRect itemRect = m_nalList->visualItemRect(firstMatch);
+    const QRect itemRect = m_nalList->visualItemRect(firstMatch);
     if (!m_nalList->viewport()->rect().intersects(itemRect)) {
-        QTimer::singleShot(0, this, [this, frameIdx]() {
-            const QList<QTreeWidgetItem *> list =
-                m_nalList->findItems("*", Qt::MatchWildcard);
-            for (QTreeWidgetItem *it : list) {
-                if (it->data(0, Qt::UserRole).toInt() == frameIdx) {
-                    m_nalList->scrollToItem(it, QAbstractItemView::PositionAtCenter);
-                    break;
-                }
-            }
+        QTreeWidgetItem *target = firstMatch;
+        QTimer::singleShot(0, this, [this, target]() {
+            if (m_nalList->indexOfTopLevelItem(target) >= 0)
+                m_nalList->scrollToItem(target, QAbstractItemView::PositionAtCenter);
         });
     }
 }
@@ -458,13 +630,16 @@ void MainWindow::onPlayPause() {
     if (m_totalFrames == 0) return;
 
     if (!m_isPlaying) {
+        if (m_currentFrameIndex >= m_totalFrames - 1) showFrameAt(0);
         m_playerTimer->start(playerIntervalMs());
         m_playBtn->setText("Pause");
         m_isPlaying = true;
+        if (m_audio) m_audio->play();
     } else {
         m_playerTimer->stop();
         m_playBtn->setText("Play");
         m_isPlaying = false;
+        if (m_audio) m_audio->pause();
     }
 }
 
@@ -488,27 +663,45 @@ void MainWindow::onStop() {
     m_playerTimer->stop();
     m_isPlaying = false;
     m_playBtn->setText("Play");
-    m_seekSlider->setValue(0);
-    if (!m_frames.empty()) showFrame(m_frames[0].image, 0);
+    if (m_audio) m_audio->stop();
+    showFrameAt(0);
+}
+
+void MainWindow::onStepForward() {
+    if (m_totalFrames <= 0) return;
+    m_playerTimer->stop();
+    m_isPlaying = false;
+    m_playBtn->setText("Play");
+    if (m_audio) m_audio->pause();
+    const int step = m_stepSpin ? m_stepSpin->value() : 1;
+    showFrameAt(m_currentFrameIndex + step);
+}
+
+void MainWindow::onStepBackward() {
+    if (m_totalFrames <= 0) return;
+    m_playerTimer->stop();
+    m_isPlaying = false;
+    m_playBtn->setText("Play");
+    if (m_audio) m_audio->pause();
+    const int step = m_stepSpin ? m_stepSpin->value() : 1;
+    showFrameAt(m_currentFrameIndex - step);
 }
 
 void MainWindow::onSeek(int value) {
-    if (value >= 0 && value < (int)m_frames.size()) {
-        showFrame(m_frames[value].image, value);
-    }
+    if (m_totalFrames <= 0) return;
+    showFrameAt(value);
 }
 
 void MainWindow::onPlayerTick() {
-    int next = m_seekSlider->value() + 1;
-    if (next >= m_totalFrames) {
+    if (m_totalFrames <= 0) return;
+    if (m_currentFrameIndex + 1 >= m_totalFrames) {
         m_playerTimer->stop();
         m_isPlaying = false;
         m_playBtn->setText("Play");
-        next = 0;
+        if (m_audio) m_audio->pause();
+        return;
     }
-    if (next < (int)m_frames.size()) {
-        showFrame(m_frames[next].image, next);
-    }
+    showFrameAt(m_currentFrameIndex + 1);
 }
 
 void MainWindow::onNALSelected(QTreeWidgetItem *current, QTreeWidgetItem *previous) {
@@ -521,17 +714,17 @@ void MainWindow::onNALSelected(QTreeWidgetItem *current, QTreeWidgetItem *previo
     const auto &nals = m_parser.nalUnits();
     if ((size_t)idx >= nals.size()) return;
 
-    NALAnalysis analysis = m_analyzer.analyzeOne(nals[idx]);
+    NALAnalysis analysis = m_analyzer.analyzeOne(nals[idx], m_parser.nalData(nals[idx]));
     m_details->setPlainText(QString::fromStdString(analysis.details));
 
-    int fIdx = nals[idx].frameIndex;
-    if (fIdx >= 0 && fIdx < (int)m_frames.size()) {
+    const int fIdx = nals[idx].frameIndex;
+    if (fIdx >= 0 && fIdx < m_totalFrames) {
         if (m_isPlaying) {
             m_playerTimer->stop();
             m_isPlaying = false;
             m_playBtn->setText("Play");
         }
-        showFrame(m_frames[fIdx].image, fIdx);
+        showFrameAt(fIdx);
     }
 }
 
@@ -591,21 +784,80 @@ void MainWindow::saveRecentFiles() {
     settings.setValue("recentFiles", m_recentFiles);
 }
 
+bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
+    if (event->type() == QEvent::MouseButtonDblClick &&
+        (watched == m_videoLabel || watched == m_fullscreenLabel)) {
+        toggleFullscreen();
+        return true;
+    }
+    return QMainWindow::eventFilter(watched, event);
+}
+
+void MainWindow::toggleFullscreen() {
+    if (m_fullscreen) exitFullscreen();
+    else enterFullscreen();
+}
+
+void MainWindow::enterFullscreen() {
+    if (m_fullscreen || m_currentImage.isNull()) return;
+
+    if (!m_fullscreenWindow) {
+        m_fullscreenWindow = new QWidget(nullptr, Qt::Window | Qt::FramelessWindowHint);
+        m_fullscreenWindow->setStyleSheet("background:black");
+        m_fullscreenLabel = new QLabel(m_fullscreenWindow);
+        m_fullscreenLabel->setAlignment(Qt::AlignCenter);
+        m_fullscreenLabel->setStyleSheet("background:black");
+        m_fullscreenLabel->installEventFilter(this);
+        auto *layout = new QVBoxLayout(m_fullscreenWindow);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->addWidget(m_fullscreenLabel);
+        auto *escape = new QShortcut(QKeySequence(Qt::Key_Escape), m_fullscreenWindow);
+        QObject::connect(escape, &QShortcut::activated, this, &MainWindow::exitFullscreen);
+        auto *prev = new QShortcut(QKeySequence(Qt::Key_Left), m_fullscreenWindow);
+        QObject::connect(prev, &QShortcut::activated, this, &MainWindow::onStepBackward);
+        auto *next = new QShortcut(QKeySequence(Qt::Key_Right), m_fullscreenWindow);
+        QObject::connect(next, &QShortcut::activated, this, &MainWindow::onStepForward);
+        auto *space = new QShortcut(QKeySequence(Qt::Key_Space), m_fullscreenWindow);
+        QObject::connect(space, &QShortcut::activated, this, &MainWindow::onPlayPause);
+    }
+
+    m_fullscreenWindow->showFullScreen();
+    m_fullscreen = true;
+    updateFullscreenFrame();
+    hide();   // hide window frame, control bar and progress slider
+}
+
+void MainWindow::exitFullscreen() {
+    if (!m_fullscreen) return;
+    m_fullscreen = false;
+    if (m_fullscreenWindow) m_fullscreenWindow->hide();
+    show();
+    raise();
+    activateWindow();
+}
+
+void MainWindow::updateFullscreenFrame() {
+    if (!m_fullscreen || !m_fullscreenLabel || m_currentImage.isNull()) return;
+    QSize target = m_fullscreenWindow ? m_fullscreenWindow->size() : QSize();
+    if (target.isEmpty()) target = m_fullscreenLabel->size();
+    m_fullscreenLabel->setPixmap(QPixmap::fromImage(
+        m_currentImage.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
+}
+
 void MainWindow::closeEvent(QCloseEvent *event) {
+    if (m_fullscreenWindow) m_fullscreenWindow->close();
+    if (m_audio) m_audio->close();
     saveRecentFiles();
     event->accept();
 }
 
 void MainWindow::resizeEvent(QResizeEvent *event) {
     QMainWindow::resizeEvent(event);
-    if (!m_frames.empty() && m_videoLabel) {
-        QSize newSize = m_videoLabel->size();
+    if (!m_currentImage.isNull() && m_videoLabel) {
+        const QSize newSize = m_videoLabel->size();
         if (newSize != m_videoSize && newSize.width() > 0 && newSize.height() > 0) {
             m_videoSize = newSize;
-            int curIdx = m_seekSlider->value();
-            if (curIdx >= 0 && curIdx < (int)m_frames.size()) {
-                showFrame(m_frames[curIdx].image, curIdx);
-            }
+            showFrame(m_currentImage, m_currentFrameIndex);
         }
     }
 }

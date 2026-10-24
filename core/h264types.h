@@ -82,8 +82,8 @@ struct H264PPS {
     int32_t second_chroma_qp_index_offset = 0;
 };
 
-bool parseH264SPS(const NALUnit &nal, H264SPS &out);
-bool parseH264PPS(const NALUnit &nal, H264PPS &out);
+bool parseH264SPS(const NALUnit &nal, const uint8_t *data, H264SPS &out);
+bool parseH264PPS(const NALUnit &nal, const uint8_t *data, H264PPS &out);
 
 struct H264SliceHeader {
     uint32_t first_mb_in_slice = 0;
@@ -100,4 +100,4 @@ struct H264SliceHeader {
     }
 };
 
-bool parseH264SliceHeader(const NALUnit &nal, const H264SPS &sps, H264SliceHeader &out);
+bool parseH264SliceHeader(const NALUnit &nal, const uint8_t *data, const H264SPS &sps, H264SliceHeader &out);

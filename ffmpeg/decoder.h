@@ -23,6 +23,7 @@ public:
     void reset();
     bool decodeNextFrame(DecodedFrame &out);
     bool seekToFrame(int targetIndex);
+    bool seekByContainer(int targetIndex);
 
     bool decodeKeyframes(std::vector<DecodedFrame> &out, int maxFrames = 10);
 

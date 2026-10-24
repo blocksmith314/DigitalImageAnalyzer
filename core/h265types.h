@@ -116,6 +116,26 @@ struct H265PPS {
     bool pps_extension_present_flag = false;
 };
 
-bool parseH265VPS(const NALUnit &nal, H265VPS &out);
-bool parseH265SPS(const NALUnit &nal, H265SPS &out);
-bool parseH265PPS(const NALUnit &nal, H265PPS &out);
+struct H265SliceSegmentHeader {
+    bool first_slice_segment_in_pic_flag = true;
+    bool isIrap = false;
+    bool isIdr = false;
+    bool dependent = false;
+    uint32_t slice_pic_parameter_set_id = 0;
+    uint32_t slice_type = 1;   // 0 = B, 1 = P, 2 = I
+    uint32_t pic_order_cnt_lsb = 0;
+    bool pocValid = false;
+
+    char frameTypeChar() const {
+        if (isIrap || slice_type == 2) return 'I';
+        if (slice_type == 0) return 'B';
+        return 'P';
+    }
+};
+
+bool parseH265VPS(const NALUnit &nal, const uint8_t *data, H265VPS &out);
+bool parseH265SPS(const NALUnit &nal, const uint8_t *data, H265SPS &out);
+bool parseH265PPS(const NALUnit &nal, const uint8_t *data, H265PPS &out);
+bool parseH265SliceSegmentHeader(const NALUnit &nal, const uint8_t *data,
+                                 const H265SPS &sps, const H265PPS &pps,
+                                 H265SliceSegmentHeader &out);

@@ -109,11 +109,11 @@ static void parseVui(BitReader &br, H264SPS &out) {
     }
 }
 
-bool parseH264SPS(const NALUnit &nal, H264SPS &out) {
-    if (nal.data.size() < nal.startCodeLen + 2) return false;
+bool parseH264SPS(const NALUnit &nal, const uint8_t *data, H264SPS &out) {
+    if (nal.size < nal.startCodeLen + 2) return false;
 
     const size_t rbspOffset = nal.startCodeLen + 1;
-    BitReader br(nal.data.data() + rbspOffset, nal.data.size() - rbspOffset);
+    BitReader br(data + rbspOffset, nal.size - rbspOffset);
 
     out.profile_idc = (uint8_t)br.readBits(8);
     out.constraint_set0_flag = br.readBit();
@@ -194,11 +194,11 @@ bool parseH264SPS(const NALUnit &nal, H264SPS &out) {
     return true;
 }
 
-bool parseH264PPS(const NALUnit &nal, H264PPS &out) {
-    if (nal.data.size() < nal.startCodeLen + 2) return false;
+bool parseH264PPS(const NALUnit &nal, const uint8_t *data, H264PPS &out) {
+    if (nal.size < nal.startCodeLen + 2) return false;
 
     const size_t rbspOffset = nal.startCodeLen + 1;
-    BitReader br(nal.data.data() + rbspOffset, nal.data.size() - rbspOffset);
+    BitReader br(data + rbspOffset, nal.size - rbspOffset);
 
     out.pps_id = (uint8_t)br.readUe();
     out.sps_id = (uint8_t)br.readUe();
@@ -252,10 +252,10 @@ bool parseH264PPS(const NALUnit &nal, H264PPS &out) {
     return true;
 }
 
-bool parseH264SliceHeader(const NALUnit &nal, const H264SPS &sps, H264SliceHeader &out) {
-    if (nal.data.size() < nal.startCodeLen + 5) return false;
+bool parseH264SliceHeader(const NALUnit &nal, const uint8_t *data, const H264SPS &sps, H264SliceHeader &out) {
+    if (nal.size < nal.startCodeLen + 5) return false;
     const size_t rbspOffset = nal.startCodeLen + 1;
-    BitReader br(nal.data.data() + rbspOffset, nal.data.size() - rbspOffset);
+    RbspBitReader br(data + rbspOffset, nal.size - rbspOffset);
 
     out.first_mb_in_slice = (uint32_t)br.readUe();
     out.slice_type = (uint32_t)br.readUe();

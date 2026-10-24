@@ -191,43 +191,43 @@ std::string seiTypeName(uint32_t type) {
     }
 }
 
-bool parseSeiMessages(const NALUnit &nal, bool h265, std::vector<SeiMessage> &out) {
+bool parseSeiMessages(const NALUnit &nal, const uint8_t *data, bool h265,
+                      std::vector<SeiMessage> &out) {
     const size_t headerLen = h265 ? 2 : 1;
     const size_t start = nal.startCodeLen + headerLen;
-    if (start >= nal.data.size()) return false;
+    if (!data || start >= nal.size) return false;
 
-    const std::string rbsp = stripEmulationPrevention(nal.data.data() + start,
-                                                      nal.data.size() - start);
-    const uint8_t *data = reinterpret_cast<const uint8_t *>(rbsp.data());
+    const std::string rbsp = stripEmulationPrevention(data + start, nal.size - start);
+    const uint8_t *payloadData = reinterpret_cast<const uint8_t *>(rbsp.data());
     const size_t len = rbsp.size();
 
     size_t i = 0;
     bool any = false;
     while (i < len) {
-        if (data[i] == 0x80) break; // rbsp_trailing_bits
+        if (payloadData[i] == 0x80) break; // rbsp_trailing_bits
 
         uint32_t type = 0;
-        while (i < len && data[i] == 0xFF) {
+        while (i < len && payloadData[i] == 0xFF) {
             type += 255;
             i++;
         }
         if (i >= len) break;
-        type += data[i++];
+        type += payloadData[i++];
 
         uint32_t size = 0;
-        while (i < len && data[i] == 0xFF) {
+        while (i < len && payloadData[i] == 0xFF) {
             size += 255;
             i++;
         }
         if (i >= len) break;
-        size += data[i++];
+        size += payloadData[i++];
 
         if (size > len - i) size = (uint32_t)(len - i);
 
         SeiMessage msg;
         msg.type = type;
         msg.size = size;
-        msg.text = decodeMessage(type, data + i, size);
+        msg.text = decodeMessage(type, payloadData + i, size);
         out.push_back(msg);
         any = true;
 

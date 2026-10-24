@@ -15,7 +15,7 @@ int main(int argc, char **argv) {
     
     auto &nals = parser.nalUnitsMut();
     NALAnalyzer analyzer;
-    analyzer.analyzeAll(nals);
+    analyzer.analyzeAll(parser);
     
     printf("Stats: frameCount=%u codec=%d\n", analyzer.stats().frameCount, (int)analyzer.stats().codec);
     

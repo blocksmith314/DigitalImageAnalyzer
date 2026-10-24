@@ -273,11 +273,11 @@ void parseShortTermRefPicSet(BitReader &br, uint32_t idx,
 
 } // namespace
 
-bool parseH265VPS(const NALUnit &nal, H265VPS &out) {
-    if (nal.data.size() < nal.startCodeLen + 3) return false;
+bool parseH265VPS(const NALUnit &nal, const uint8_t *data, H265VPS &out) {
+    if (nal.size < nal.startCodeLen + 3) return false;
 
     const size_t rbspOffset = nal.startCodeLen + 2;
-    BitReader br(nal.data.data() + rbspOffset, nal.data.size() - rbspOffset);
+    BitReader br(data + rbspOffset, nal.size - rbspOffset);
 
     out.vps_id = (uint8_t)br.readBits(4);
     out.base_layer_internal_flag = br.readBit();
@@ -301,11 +301,11 @@ bool parseH265VPS(const NALUnit &nal, H265VPS &out) {
     return true;
 }
 
-bool parseH265SPS(const NALUnit &nal, H265SPS &out) {
-    if (nal.data.size() < nal.startCodeLen + 3) return false;
+bool parseH265SPS(const NALUnit &nal, const uint8_t *data, H265SPS &out) {
+    if (nal.size < nal.startCodeLen + 3) return false;
 
     const size_t rbspOffset = nal.startCodeLen + 2;
-    BitReader br(nal.data.data() + rbspOffset, nal.data.size() - rbspOffset);
+    BitReader br(data + rbspOffset, nal.size - rbspOffset);
 
     out.vps_id = (uint8_t)br.readBits(4);
     out.max_sub_layers_minus1 = (uint8_t)br.readBits(3);
@@ -393,11 +393,52 @@ bool parseH265SPS(const NALUnit &nal, H265SPS &out) {
     return true;
 }
 
-bool parseH265PPS(const NALUnit &nal, H265PPS &out) {
-    if (nal.data.size() < nal.startCodeLen + 3) return false;
+bool parseH265SliceSegmentHeader(const NALUnit &nal, const uint8_t *data,
+                                 const H265SPS &sps, const H265PPS &pps,
+                                 H265SliceSegmentHeader &out) {
+    if (nal.size < nal.startCodeLen + 3) return false;
 
     const size_t rbspOffset = nal.startCodeLen + 2;
-    BitReader br(nal.data.data() + rbspOffset, nal.data.size() - rbspOffset);
+    RbspBitReader br(data + rbspOffset, nal.size - rbspOffset);
+
+    out.first_slice_segment_in_pic_flag = br.readBit();
+    out.isIrap = (nal.nalType >= 16 && nal.nalType <= 23);
+    out.isIdr = (nal.nalType == 19 || nal.nalType == 20);
+    if (out.isIrap) br.readBit(); // no_output_of_prior_pics_flag
+    out.slice_pic_parameter_set_id = (uint32_t)br.readUe();
+
+    if (!out.first_slice_segment_in_pic_flag) {
+        if (pps.dependent_slice_segments_enabled_flag) out.dependent = br.readBit();
+        const uint32_t log2Ctu = sps.log2_min_luma_coding_block_size_minus3 + 3 +
+                                 sps.log2_diff_max_min_luma_coding_block_size;
+        const uint32_t ctuSize = 1u << log2Ctu;
+        const uint32_t ctbsX = (sps.pic_width_in_luma_samples + ctuSize - 1) / ctuSize;
+        const uint32_t ctbsY = (sps.pic_height_in_luma_samples + ctuSize - 1) / ctuSize;
+        const uint32_t picSizeCtbs = std::max(1u, ctbsX * ctbsY);
+        int addrBits = 0;
+        while ((1u << addrBits) < picSizeCtbs) addrBits++;
+        br.readBits(addrBits); // slice_segment_address
+    }
+
+    if (!out.dependent) {
+        for (int i = 0; i < (int)pps.num_extra_slice_header_bits; i++) br.readBit();
+        out.slice_type = (uint32_t)br.readUe();
+        if (pps.output_flag_present_flag) br.readBit();
+        if (sps.separate_colour_plane_flag) br.readBits(2);
+        if (!out.isIdr) {
+            const uint32_t pocBits = sps.log2_max_pic_order_cnt_lsb_minus4 + 4;
+            out.pic_order_cnt_lsb = (uint32_t)br.readBits(pocBits);
+        }
+        out.pocValid = true;   // IDR pictures have POC 0
+    }
+    return true;
+}
+
+bool parseH265PPS(const NALUnit &nal, const uint8_t *data, H265PPS &out) {
+    if (nal.size < nal.startCodeLen + 3) return false;
+
+    const size_t rbspOffset = nal.startCodeLen + 2;
+    BitReader br(data + rbspOffset, nal.size - rbspOffset);
 
     out.pps_id = (uint8_t)br.readUe();
     out.sps_id = (uint8_t)br.readUe();

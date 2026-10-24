@@ -26,6 +26,44 @@ BitReader::BitReader(const uint8_t *data, size_t len)
     : m_owned(removeEmulationPrevention(data, len)),
       m_data(m_owned.data()), m_len(m_owned.size()) {}
 
+uint8_t RbspBitReader::nextByte() {
+    while (m_pos < m_len) {
+        const uint8_t b = m_data[m_pos++];
+        if (b == 0x03 && m_prev1 == 0x00 && m_prev2 == 0x00) continue; // EPB
+        m_prev2 = m_prev1;
+        m_prev1 = b;
+        return b;
+    }
+    m_eof = true;
+    return 0;
+}
+
+bool RbspBitReader::readBit() {
+    if (m_bitsLeft == 0) {
+        if (m_eof) return false;
+        m_cur = nextByte();
+        if (m_eof) return false;
+        m_bitsLeft = 8;
+    }
+    const bool bit = (m_cur & 0x80) != 0;
+    m_cur = (uint8_t)(m_cur << 1);
+    m_bitsLeft--;
+    return bit;
+}
+
+uint64_t RbspBitReader::readBits(int n) {
+    uint64_t v = 0;
+    for (int i = 0; i < n; i++) v = (v << 1) | (readBit() ? 1 : 0);
+    return v;
+}
+
+uint64_t RbspBitReader::readUe() {
+    int zeros = 0;
+    while (!eof() && !readBit() && zeros < 32) zeros++;
+    if (zeros >= 32) return 0;
+    return ((1ULL << zeros) - 1) + (zeros ? readBits(zeros) : 0);
+}
+
 bool BitReader::eof() const {
     return m_pos >= m_len;
 }

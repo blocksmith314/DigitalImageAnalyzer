@@ -1,9 +1,13 @@
 #include "nalanalyzer.h"
-#include "seiparser.h"
-#include <sstream>
-#include <algorithm>
 
-void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
+#include "bitstreamparser.h"
+#include "seiparser.h"
+
+#include <algorithm>
+#include <sstream>
+
+bool NALAnalyzer::analyzeAll(BitstreamParser &parser,
+                             const std::function<bool(double)> &progress) {
     m_stats = StreamStats();
     m_h264SpsMap.clear();
     m_h264PpsMap.clear();
@@ -11,63 +15,96 @@ void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
     m_h265PpsMap.clear();
     m_h265VpsMap.clear();
 
-    if (nals.empty()) return;
+    auto &nals = parser.nalUnitsMut();
+    if (nals.empty()) return true;
     m_stats.codec = nals.front().codec;
     m_stats.totalNals = (uint32_t)nals.size();
 
+    size_t processed = 0;
     for (auto &nal : nals) {
+        if (progress && (++processed % 100000 == 0)) {
+            if (!progress(0.8 * (double)processed / (double)nals.size())) {
+                return false;
+            }
+        }
+        const uint8_t *data = parser.nalData(nal);
         m_stats.totalBytes += nal.size;
         if (nal.size > m_stats.maxNalSize) m_stats.maxNalSize = nal.size;
         if (m_stats.minNalSize == 0 || nal.size < m_stats.minNalSize)
             m_stats.minNalSize = nal.size;
+
         const bool sliceNal = (nal.codec == CodecType::H264)
                                   ? (nal.nalType >= 1 && nal.nalType <= 5)
                                   : (nal.nalType <= 21);
         if (sliceNal) m_stats.sliceCount++;
-        NALAnalysis a = analyzeOne(nal);
-        if (a.isSPS) {
-            m_stats.spsCount++;
-            if (nal.codec == CodecType::H264) {
-                m_h264SpsMap[nal.nalType] = a.h264sps;
-                if (m_stats.width == 0) {
-                    m_stats.width = a.h264sps.width;
-                    m_stats.height = a.h264sps.height;
-                    m_stats.profile = a.h264sps.profileName();
-                    m_stats.level = std::to_string(a.h264sps.level_idc);
-                }
-            } else {
-                m_h265SpsMap[nal.nalType] = a.h265sps;
-                if (m_stats.width == 0) {
-                    m_stats.width = a.h265sps.width;
-                    m_stats.height = a.h265sps.height;
-                    m_stats.profile = a.h265sps.profileName();
-                    m_stats.level = std::to_string(a.h265sps.level_idc);
-                }
-            }
-        } else if (a.isPPS) {
-            m_stats.ppsCount++;
-            if (nal.codec == CodecType::H264) m_h264PpsMap[nal.nalType] = a.h264pps;
-            else m_h265PpsMap[nal.nalType] = a.h265pps;
-        } else if (a.isVPS) {
-            m_stats.vpsCount++;
-            m_h265VpsMap[nal.nalType] = a.h265vps;
-        }
 
         if (nal.codec == CodecType::H264) {
-            if (nal.nalType == 5) m_stats.idrCount++;
-            if (nal.nalType == 6) m_stats.seiCount++;
-            if (nal.nalType == 9) m_stats.audCount++;
+            switch (nal.nalType) {
+                case 7: {
+                    H264SPS sps;
+                    if (parseH264SPS(nal, data, sps)) {
+                        m_h264SpsMap[nal.nalType] = sps;
+                        if (m_stats.width == 0) {
+                            m_stats.width = sps.width;
+                            m_stats.height = sps.height;
+                            m_stats.profile = sps.profileName();
+                            m_stats.level = std::to_string(sps.level_idc);
+                        }
+                    }
+                    m_stats.spsCount++;
+                    break;
+                }
+                case 8: {
+                    H264PPS pps;
+                    if (parseH264PPS(nal, data, pps)) m_h264PpsMap[nal.nalType] = pps;
+                    m_stats.ppsCount++;
+                    break;
+                }
+                case 5: m_stats.idrCount++; break;
+                case 6: m_stats.seiCount++; break;
+                case 9: m_stats.audCount++; break;
+                default: break;
+            }
         } else {
-            if (nal.nalType == 19 || nal.nalType == 20 || nal.nalType == 21) m_stats.idrCount++;
-            if (nal.nalType == 39 || nal.nalType == 40) m_stats.seiCount++;
-            if (nal.nalType == 35) m_stats.audCount++;
+            switch (nal.nalType) {
+                case 32: {
+                    H265VPS vps;
+                    if (parseH265VPS(nal, data, vps)) m_h265VpsMap[vps.vps_id] = vps;
+                    m_stats.vpsCount++;
+                    break;
+                }
+                case 33: {
+                    H265SPS sps;
+                    if (parseH265SPS(nal, data, sps)) {
+                        m_h265SpsMap[sps.sps_id] = sps;
+                        if (m_stats.width == 0) {
+                            m_stats.width = sps.width;
+                            m_stats.height = sps.height;
+                            m_stats.profile = sps.profileName();
+                            m_stats.level = std::to_string(sps.level_idc);
+                        }
+                    }
+                    m_stats.spsCount++;
+                    break;
+                }
+                case 34: {
+                    H265PPS pps;
+                    if (parseH265PPS(nal, data, pps)) m_h265PpsMap[pps.pps_id] = pps;
+                    m_stats.ppsCount++;
+                    break;
+                }
+                case 19: case 20: case 21: m_stats.idrCount++; break;
+                case 39: case 40: m_stats.seiCount++; break;
+                case 35: m_stats.audCount++; break;
+                default: break;
+            }
         }
     }
 
-    bool isH264 = (m_stats.codec == CodecType::H264);
+    const bool isH264 = (m_stats.codec == CodecType::H264);
 
     struct FrameInfo {
-        std::vector<NALUnit*> slices;
+        std::vector<NALUnit *> slices;
         uint32_t poc_lsb = 0;
         bool pocValid = false;
         bool isIdr = false;
@@ -79,8 +116,14 @@ void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
     H264SPS activeSps;
     if (isH264 && !m_h264SpsMap.empty()) activeSps = m_h264SpsMap.begin()->second;
 
+    processed = 0;
     for (auto &nal : nals) {
-        bool isSlice = isH264 ? (nal.nalType >= 1 && nal.nalType <= 5) : (nal.nalType <= 21);
+        if (progress && (++processed % 100000 == 0)) {
+            if (!progress(0.8 + 0.2 * (double)processed / (double)nals.size())) {
+                return false;
+            }
+        }
+        const bool isSlice = isH264 ? (nal.nalType >= 1 && nal.nalType <= 5) : (nal.nalType <= 21);
         if (!isSlice) {
             nal.frameIndex = -1;
             nal.dtsIndex = -1;
@@ -88,6 +131,7 @@ void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
             continue;
         }
 
+        const uint8_t *data = parser.nalData(nal);
         bool isNew = !cur;
         uint32_t poc = 0;
         bool pocOk = false;
@@ -96,9 +140,8 @@ void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
 
         if (isH264) {
             H264SliceHeader sh;
-            if (parseH264SliceHeader(nal, activeSps, sh)) {
-                bool mb0 = (sh.first_mb_in_slice == 0);
-                if (mb0) isNew = true;
+            if (parseH264SliceHeader(nal, data, activeSps, sh)) {
+                if (sh.first_mb_in_slice == 0) isNew = true;
                 poc = sh.pic_order_cnt_lsb;
                 pocOk = true;
                 ft = sh.frameTypeChar();
@@ -106,9 +149,29 @@ void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
             idr = (nal.nalType == 5);
             if (idr) ft = 'I';
         } else {
-            // H.265: IRAP (BLA/IDR/CRA) resets POC; use it as a segment boundary
-            idr = (nal.nalType >= 16 && nal.nalType <= 21);
+            idr = (nal.nalType >= 16 && nal.nalType <= 23);
             if (idr) ft = 'I';
+
+            uint32_t ppsId = 0;
+            {
+                RbspBitReader br(data + nal.startCodeLen + 2, nal.size - nal.startCodeLen - 2);
+                br.readBit(); // first_slice_segment_in_pic_flag
+                if (idr) br.readBit(); // no_output_of_prior_pics_flag
+                ppsId = (uint32_t)br.readUe();
+            }
+            auto ppsIt = m_h265PpsMap.find((int)ppsId);
+            if (ppsIt != m_h265PpsMap.end()) {
+                auto spsIt = m_h265SpsMap.find((int)ppsIt->second.sps_id);
+                if (spsIt != m_h265SpsMap.end()) {
+                    H265SliceSegmentHeader sh;
+                    if (parseH265SliceSegmentHeader(nal, data, spsIt->second, ppsIt->second, sh)) {
+                        if (sh.first_slice_segment_in_pic_flag) isNew = true;
+                        if (sh.pocValid) { poc = sh.pic_order_cnt_lsb; pocOk = true; }
+                        ft = sh.frameTypeChar();
+                        idr = sh.isIrap;
+                    }
+                }
+            }
         }
 
         if (isNew) {
@@ -119,22 +182,27 @@ void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
             cur->isIdr = true;
         }
         cur->slices.push_back(&nal);
-        if (pocOk) { cur->poc_lsb = poc; cur->pocValid = true; }
+        if (pocOk) {
+            cur->poc_lsb = poc;
+            cur->pocValid = true;
+        }
         cur->frameType = ft;
     }
 
     if (!frames.empty()) {
-        bool allPoc = isH264;
+        bool allPoc = isH264 || (m_stats.codec == CodecType::H265);
         for (auto &f : frames) {
-            if (!f.pocValid) { allPoc = false; break; }
+            if (!f.pocValid) {
+                allPoc = false;
+                break;
+            }
         }
 
         if (allPoc && frames.size() > 1) {
-            // Display order: POC LSB is only valid within one coded video
-            // sequence (between IDRs), so sort each IDR segment by POC and
-            // accumulate the frame index across segments.
-            const uint32_t maxLsb =
-                1u << (activeSps.log2_max_pic_order_cnt_lsb_minus4 + 4);
+            uint32_t log2Poc = activeSps.log2_max_pic_order_cnt_lsb_minus4;
+            if (!isH264 && !m_h265SpsMap.empty())
+                log2Poc = m_h265SpsMap.begin()->second.log2_max_pic_order_cnt_lsb_minus4;
+            const uint32_t maxLsb = 1u << (log2Poc + 4);
             std::vector<int64_t> fullPoc(frames.size(), 0);
 
             int nextIdx = 0;
@@ -142,15 +210,14 @@ void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
             int32_t msb = 0;
             uint32_t prevLsb = 0;
             for (int i = 1; i <= (int)frames.size(); i++) {
-                bool boundary = (i == (int)frames.size()) || frames[i].isIdr;
+                const bool boundary = (i == (int)frames.size()) || frames[i].isIdr;
                 if (!boundary) continue;
 
-                // Segment [segStart, i): unwrap POC LSB in decode order
                 msb = 0;
                 prevLsb = frames[segStart].poc_lsb;
                 fullPoc[segStart] = (int64_t)prevLsb;
                 for (int k = segStart + 1; k < i; k++) {
-                    uint32_t lsb = frames[k].poc_lsb;
+                    const uint32_t lsb = frames[k].poc_lsb;
                     if (lsb < prevLsb && (prevLsb - lsb) >= maxLsb / 2) {
                         msb += (int32_t)maxLsb;
                     } else if (lsb > prevLsb && (lsb - prevLsb) > maxLsb / 2) {
@@ -195,9 +262,11 @@ void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
             default: break;
         }
     }
+    if (progress) progress(1.0);
+    return true;
 }
 
-NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
+NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal, const uint8_t *data) const {
     NALAnalysis a;
     std::ostringstream oss;
 
@@ -205,7 +274,7 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
         switch (nal.nalType) {
             case 7: {
                 a.isSPS = true;
-                if (parseH264SPS(nal, a.h264sps)) {
+                if (parseH264SPS(nal, data, a.h264sps)) {
                     oss << "=== H.264 SPS Details ===\n";
                     oss << "Profile: " << a.h264sps.profileName() << " (" << (int)a.h264sps.profile_idc << ")\n";
                     oss << "Level: " << (int)a.h264sps.level_idc << "\n";
@@ -250,7 +319,7 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
             }
             case 8: {
                 a.isPPS = true;
-                if (parseH264PPS(nal, a.h264pps)) {
+                if (parseH264PPS(nal, data, a.h264pps)) {
                     oss << "=== H.264 PPS Details ===\n";
                     oss << "PPS ID: " << (int)a.h264pps.pps_id << "\n";
                     oss << "SPS ID: " << (int)a.h264pps.sps_id << "\n";
@@ -283,7 +352,7 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
             case 6: {
                 oss << "=== H.264 SEI (Supplemental Enhancement Information) ===\n";
                 std::vector<SeiMessage> msgs;
-                if (parseSeiMessages(nal, false, msgs) && !msgs.empty()) {
+                if (parseSeiMessages(nal, data, false, msgs) && !msgs.empty()) {
                     for (size_t i = 0; i < msgs.size(); i++) {
                         oss << "Message #" << i << ": type " << msgs[i].type
                             << " (" << seiTypeName(msgs[i].type) << "), "
@@ -306,7 +375,7 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
         switch (nal.nalType) {
             case 32: {
                 a.isVPS = true;
-                if (parseH265VPS(nal, a.h265vps)) {
+                if (parseH265VPS(nal, data, a.h265vps)) {
                     oss << "=== H.265 VPS Details ===\n";
                     oss << "VPS ID: " << (int)a.h265vps.vps_id << "\n";
                     oss << "Base layer internal/available: " << a.h265vps.base_layer_internal_flag
@@ -322,7 +391,7 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
             }
             case 33: {
                 a.isSPS = true;
-                if (parseH265SPS(nal, a.h265sps)) {
+                if (parseH265SPS(nal, data, a.h265sps)) {
                     oss << "=== H.265 SPS Details ===\n";
                     oss << "VPS ID: " << (int)a.h265sps.vps_id << "\n";
                     oss << "SPS ID: " << (int)a.h265sps.sps_id << "\n";
@@ -361,7 +430,7 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
             }
             case 34: {
                 a.isPPS = true;
-                if (parseH265PPS(nal, a.h265pps)) {
+                if (parseH265PPS(nal, data, a.h265pps)) {
                     oss << "=== H.265 PPS Details ===\n";
                     oss << "PPS ID: " << (int)a.h265pps.pps_id << "\n";
                     oss << "SPS ID: " << (int)a.h265pps.sps_id << "\n";
@@ -408,7 +477,7 @@ NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {
             case 40: {
                 oss << "=== H.265 " << (nal.nalType == 39 ? "Prefix" : "Suffix") << " SEI ===\n";
                 std::vector<SeiMessage> msgs;
-                if (parseSeiMessages(nal, true, msgs) && !msgs.empty()) {
+                if (parseSeiMessages(nal, data, true, msgs) && !msgs.empty()) {
                     for (size_t i = 0; i < msgs.size(); i++) {
                         oss << "Message #" << i << ": type " << msgs[i].type
                             << " (" << seiTypeName(msgs[i].type) << "), "

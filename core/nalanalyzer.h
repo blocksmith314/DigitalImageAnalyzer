@@ -3,6 +3,7 @@
 #include "nalunit.h"
 #include "h264types.h"
 #include "h265types.h"
+#include <functional>
 #include <string>
 #include <vector>
 #include <map>
@@ -42,10 +43,13 @@ struct StreamStats {
     std::string level;
 };
 
+class BitstreamParser;
+
 class NALAnalyzer {
 public:
-    void analyzeAll(std::vector<NALUnit> &nals);
-    NALAnalysis analyzeOne(const NALUnit &nal) const;
+    bool analyzeAll(BitstreamParser &parser,
+                    const std::function<bool(double)> &progress = {});
+    NALAnalysis analyzeOne(const NALUnit &nal, const uint8_t *data) const;
     const StreamStats &stats() const { return m_stats; }
     const std::map<int, H264SPS> &h264SpsMap() const { return m_h264SpsMap; }
     const std::map<int, H264PPS> &h264PpsMap() const { return m_h264PpsMap; }

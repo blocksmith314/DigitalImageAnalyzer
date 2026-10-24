@@ -13,9 +13,13 @@
 #include <QSlider>
 #include <QPushButton>
 #include <QComboBox>
+#include <QSpinBox>
+#include <unordered_map>
 #include "bitstreamparser.h"
 #include "nalanalyzer.h"
 #include "decoder.h"
+
+class AudioPlayer;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -32,7 +36,10 @@ private slots:
     void onNALSelected(QTreeWidgetItem *current, QTreeWidgetItem *previous);
     void onPlayPause();
     void onStop();
+    void onStepForward();
+    void onStepBackward();
     void onSeek(int value);
+    void toggleFullscreen();
     void onPlayerTick();
     void onSpeedChanged(int index);
 
@@ -50,6 +57,10 @@ private:
     bool loadFile(const QString &path);
     void startPlayer();
     void showFrame(const QImage &image, int frameIdx);
+    void showFrameAt(int idx);
+    void enterFullscreen();
+    void exitFullscreen();
+    void updateFullscreenFrame();
     void highlightFrame(int frameIdx);
     int playerIntervalMs() const;
 
@@ -57,6 +68,7 @@ private:
     NALAnalyzer m_analyzer;
     FFmpegDecoder m_decoder;
     FFmpegDecoder m_playerDecoder;
+    AudioPlayer *m_audio = nullptr;
     std::string m_currentPath;
 
     QTreeWidget *m_nalList = nullptr;
@@ -64,6 +76,7 @@ private:
     QTextBrowser *m_statsPanel = nullptr;
     QLabel *m_videoLabel = nullptr;
     QLabel *m_fileInfoLabel = nullptr;
+    QLabel *m_timeInfoLabel = nullptr;
     QLabel *m_frameInfoLabel = nullptr;
     QMenu *m_recentMenu = nullptr;
     QList<QAction *> m_recentActions;
@@ -72,16 +85,27 @@ private:
     QTimer *m_playerTimer = nullptr;
     QPushButton *m_playBtn = nullptr;
     QPushButton *m_stopBtn = nullptr;
+    QPushButton *m_prevFrameBtn = nullptr;
+    QPushButton *m_nextFrameBtn = nullptr;
+    QPushButton *m_fullscreenBtn = nullptr;
     QSlider *m_seekSlider = nullptr;
     QComboBox *m_speedCombo = nullptr;
+    QSpinBox *m_stepSpin = nullptr;
 
     bool m_isPlaying = false;
     int m_totalFrames = 0;
+    int m_currentFrameIndex = -1;
     double m_frameRate = 30.0;
     double m_playbackSpeed = 1.0;
     QSize m_videoSize;
-    std::vector<DecodedFrame> m_frames;
+    QImage m_currentImage;
+    QWidget *m_fullscreenWindow = nullptr;
+    QLabel *m_fullscreenLabel = nullptr;
+    bool m_fullscreen = false;
+    std::unordered_map<int, std::vector<int>> m_frameRows;
+    std::vector<int> m_highlightedRows;
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 };
