@@ -16,6 +16,13 @@ void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
 
     for (auto &nal : nals) {
         m_stats.totalBytes += nal.size;
+        if (nal.size > m_stats.maxNalSize) m_stats.maxNalSize = nal.size;
+        if (m_stats.minNalSize == 0 || nal.size < m_stats.minNalSize)
+            m_stats.minNalSize = nal.size;
+        const bool sliceNal = (nal.codec == CodecType::H264)
+                                  ? (nal.nalType >= 1 && nal.nalType <= 5)
+                                  : (nal.nalType <= 21);
+        if (sliceNal) m_stats.sliceCount++;
         NALAnalysis a = analyzeOne(nal);
         if (a.isSPS) {
             m_stats.spsCount++;
@@ -98,7 +105,7 @@ void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
             idr = (nal.nalType == 5);
             if (idr) ft = 'I';
         } else {
-            // H.265: IRAP (BLA/IDR/CRA) 会重置 POC，作为分段边界
+            // H.265: IRAP (BLA/IDR/CRA) resets POC; use it as a segment boundary
             idr = (nal.nalType >= 16 && nal.nalType <= 21);
             if (idr) ft = 'I';
         }
@@ -122,10 +129,9 @@ void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
         }
 
         if (allPoc && frames.size() > 1) {
-            // 帧号 = 显示顺序。
-            // pic_order_cnt_lsb 只在一个 coded video sequence（IDR 之间）内有效，
-            // 每个 IDR 会把它重置为 0；所以必须按 IDR 分段，段内按 POC 排序，
-            // 段间累加帧号，否则不同 GOP 中 POC 相同的帧会被混在一起排序。
+            // Display order: POC LSB is only valid within one coded video
+            // sequence (between IDRs), so sort each IDR segment by POC and
+            // accumulate the frame index across segments.
             const uint32_t maxLsb =
                 1u << (activeSps.log2_max_pic_order_cnt_lsb_minus4 + 4);
             std::vector<int64_t> fullPoc(frames.size(), 0);
@@ -138,7 +144,7 @@ void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
                 bool boundary = (i == (int)frames.size()) || frames[i].isIdr;
                 if (!boundary) continue;
 
-                // 段 [segStart, i)：解码顺序下展开 POC LSB（处理长 GOP 回绕）
+                // Segment [segStart, i): unwrap POC LSB in decode order
                 msb = 0;
                 prevLsb = frames[segStart].poc_lsb;
                 fullPoc[segStart] = (int64_t)prevLsb;
@@ -179,6 +185,15 @@ void NALAnalyzer::analyzeAll(std::vector<NALUnit> &nals) {
     }
 
     m_stats.frameCount = (uint32_t)frames.size();
+    m_stats.iFrameCount = m_stats.pFrameCount = m_stats.bFrameCount = 0;
+    for (auto &f : frames) {
+        switch (f.frameType) {
+            case 'I': m_stats.iFrameCount++; break;
+            case 'P': m_stats.pFrameCount++; break;
+            case 'B': m_stats.bFrameCount++; break;
+            default: break;
+        }
+    }
 }
 
 NALAnalysis NALAnalyzer::analyzeOne(const NALUnit &nal) const {

@@ -59,9 +59,8 @@ void MainWindow::setupUI() {
     m_nalList = new QTreeWidget();
     m_nalList->setColumnCount(9);
     m_nalList->setHeaderLabels({"#", "NAL Type", "NAL Name", "Size", "Offset", "Frame Type", "DTS", "PTS", ""});
-    // 前 8 列保持固定宽度（NAL Name 在 buildNALList() 里按内容自适应）；
-    // 最后一列是空白占位列，由它吸收窗口多出来的宽度，这样全屏时表格会铺满
-    // 左侧面板，而各数据列不会被拉宽。
+    // First 8 columns keep fixed widths (NAL Name is auto-fitted in buildNALList());
+    // the last empty column absorbs extra width so the table fills the panel.
     QHeaderView *hdr = m_nalList->header();
     hdr->setStretchLastSection(false);
     hdr->setSectionResizeMode(QHeaderView::Interactive);
@@ -80,6 +79,11 @@ void MainWindow::setupUI() {
 
     m_statsPanel = new QTextBrowser();
     m_statsPanel->setOpenExternalLinks(false);
+    m_statsPanel->setMinimumHeight(240);   // give Stream Statistics more room
+    m_statsPanel->document()->setDocumentMargin(2);    // compact layout to fit all rows
+    m_statsPanel->document()->setDefaultStyleSheet(
+        "table { border-collapse: collapse; }"
+        "td { padding: 0 8px 0 0; }");
 
     m_details = new QTextBrowser();
     m_details->setOpenExternalLinks(false);
@@ -113,7 +117,7 @@ void MainWindow::setupUI() {
         for (const auto &s : speeds)
             m_speedCombo->addItem(QString::fromUtf8(s.label), s.value);
     }
-    m_speedCombo->setCurrentIndex(3);   // 默认 1x
+    m_speedCombo->setCurrentIndex(3);   // default: 1x
     m_speedCombo->setFixedWidth(80);
     connect(m_speedCombo, &QComboBox::currentIndexChanged,
             this, &MainWindow::onSpeedChanged);
@@ -134,37 +138,48 @@ void MainWindow::setupUI() {
     controlRow->addWidget(m_seekSlider, 1);
     controlRow->addWidget(m_frameInfoLabel);
 
-    QWidget *rightPanel = new QWidget();
-    QVBoxLayout *rightLayout = new QVBoxLayout(rightPanel);
-    rightLayout->setContentsMargins(0, 0, 0, 0);
-
     QGroupBox *playerGroup = new QGroupBox("Video Player");
     QVBoxLayout *playerLayout = new QVBoxLayout(playerGroup);
     playerLayout->addWidget(m_videoLabel, 1);
     playerLayout->addLayout(controlRow);
-    rightLayout->addWidget(playerGroup);
 
     QGroupBox *detailGroup = new QGroupBox("NAL Details");
     QVBoxLayout *detailLayout = new QVBoxLayout(detailGroup);
     detailLayout->addWidget(m_details);
-    rightLayout->addWidget(detailGroup, 1);
 
     QGroupBox *statsGroup = new QGroupBox("Stream Statistics");
     QVBoxLayout *statsLayout = new QVBoxLayout(statsGroup);
     statsLayout->addWidget(m_statsPanel);
 
-    QSplitter *leftSplit = new QSplitter(Qt::Vertical);
-    leftSplit->addWidget(m_nalList);
-    leftSplit->addWidget(statsGroup);
-    leftSplit->setStretchFactor(0, 3);
-    leftSplit->setStretchFactor(1, 1);
+    // Top row: NAL list | Video Player
+    QSplitter *topSplit = new QSplitter(Qt::Horizontal);
+    topSplit->addWidget(m_nalList);
+    topSplit->addWidget(playerGroup);
+    topSplit->setStretchFactor(0, 1);
+    topSplit->setStretchFactor(1, 1);
+    topSplit->setSizes({600, 800});
 
-    QSplitter *mainSplit = new QSplitter(Qt::Horizontal);
-    mainSplit->addWidget(leftSplit);
-    mainSplit->addWidget(rightPanel);
-    mainSplit->setStretchFactor(0, 1);
-    mainSplit->setStretchFactor(1, 1);
-    mainSplit->setSizes({600, 800});
+    // Bottom row: Stream Statistics | NAL Details (same row => equal height)
+    QSplitter *bottomSplit = new QSplitter(Qt::Horizontal);
+    bottomSplit->addWidget(statsGroup);
+    bottomSplit->addWidget(detailGroup);
+    bottomSplit->setStretchFactor(0, 1);
+    bottomSplit->setStretchFactor(1, 1);
+    bottomSplit->setSizes({600, 800});
+
+    // Vertical split: top row / bottom row
+    QSplitter *mainSplit = new QSplitter(Qt::Vertical);
+    mainSplit->addWidget(topSplit);
+    mainSplit->addWidget(bottomSplit);
+    mainSplit->setStretchFactor(0, 6);
+    mainSplit->setStretchFactor(1, 5);
+    mainSplit->setSizes({410, 340});
+
+    // Keep the horizontal split position of both rows in sync
+    connect(topSplit, &QSplitter::splitterMoved, this,
+            [topSplit, bottomSplit](int, int) { bottomSplit->setSizes(topSplit->sizes()); });
+    connect(bottomSplit, &QSplitter::splitterMoved, this,
+            [topSplit, bottomSplit](int, int) { topSplit->setSizes(bottomSplit->sizes()); });
 
     setCentralWidget(mainSplit);
 
@@ -236,7 +251,7 @@ void MainWindow::buildNALList() {
         items << (nal.frameType ? QString(QChar(nal.frameType)) : QString("-"));
         items << (nal.dtsIndex >= 0 ? QString::number(nal.dtsIndex) : QString("-"));
         items << (nal.frameIndex >= 0 ? QString::number(nal.frameIndex) : QString("-"));
-        items << QString();   // 空白占位列
+        items << QString();   // empty spacer column
 
         QTreeWidgetItem *item = new QTreeWidgetItem(items);
         item->setData(0, Qt::UserRole, nal.frameIndex);
@@ -282,41 +297,66 @@ void MainWindow::buildNALList() {
         m_nalList->addTopLevelItem(item);
     }
 
-    // NAL Name 列按内容自适应宽度（其余列保持固定宽度）
+    // Auto-fit NAL Name to its content
     m_nalList->resizeColumnToContents(2);
 }
 
 void MainWindow::updateStats() {
     const auto &s = m_analyzer.stats();
-    QString codecStr = (s.codec == CodecType::H264) ? "H.264/AVC" : "H.265/HEVC";
+    const QString codecStr = (s.codec == CodecType::H264) ? "H.264/AVC" : "H.265/HEVC";
+
+    const double kb = s.totalBytes / 1024.0;
+    const double mb = kb / 1024.0;
+    const int frames = (int)s.frameCount;
+    const double fps = m_frameRate > 0.0 ? m_frameRate : 0.0;
+    const double duration = (fps > 0.0 && frames > 0) ? frames / fps : 0.0;
+    const double mbps = duration > 0.0 ? (s.totalBytes * 8.0 / duration / 1e6) : 0.0;
+    const double avgNal = s.totalNals ? (double)s.totalBytes / s.totalNals : 0.0;
+    const double avgGop = s.idrCount ? (double)frames / s.idrCount : 0.0;
+    const double slicesPerFrame = frames ? (double)s.sliceCount / frames : 0.0;
 
     QString html;
-    html += QString("<h3>%1</h3>").arg(codecStr);
-    html += QString("<p>Total NAL units: <b>%1</b></p>").arg(s.totalNals);
-    html += QString("<p>Total size: <b>%1 bytes</b> (%2 KB / %3 MB)</p>")
-                .arg(s.totalBytes)
-                .arg(s.totalBytes / 1024.0, 0, 'f', 2)
-                .arg(s.totalBytes / 1024.0 / 1024.0, 0, 'f', 2);
+    html += QString("<p style='margin:0 0 3px 0'><b><big>%1</big></b></p>").arg(codecStr);
+    html += "<table border='0' cellspacing='0' cellpadding='0'>";
+    auto row = [&html](const QString &k, const QString &v) {
+        html += QString("<tr><td>%1&nbsp;&nbsp;</td><td><b>%2</b></td></tr>").arg(k, v);
+    };
 
-    if (s.width > 0 && s.height > 0) {
-        html += QString("<p>Resolution: <b>%1 x %2</b></p>").arg(s.width).arg(s.height);
+    row("NAL units", QString::number(s.totalNals));
+    row("Total size", QString("%1 KB (%2 MB)").arg(kb, 0, 'f', 2).arg(mb, 0, 'f', 2));
+    QStringList formatBits;
+    if (s.width > 0 && s.height > 0)
+        formatBits << QString("%1 x %2").arg(s.width).arg(s.height);
+    if (!s.profile.empty())
+        formatBits << QString::fromStdString(s.profile);
+    if (!s.level.empty())
+        formatBits << QString("Level %1").arg(QString::fromStdString(s.level));
+    if (!formatBits.isEmpty())
+        row("Format", formatBits.join("  \u00b7  "));
+    row("Frames", QString("%1  (I %2 / P %3 / B %4)")
+            .arg(frames).arg(s.iFrameCount).arg(s.pFrameCount).arg(s.bFrameCount));
+    if (fps > 0.0)
+        row("Frame rate", QString("%1 fps").arg(fps, 0, 'f', 2));
+    if (duration > 0.0) {
+        row("Duration", QString("%1 s").arg(duration, 0, 'f', 2));
+        row("Bitrate", QString("%1 Mbps").arg(mbps, 0, 'f', 3));
     }
-    if (!s.profile.empty()) {
-        html += QString("<p>Profile: <b>%1</b></p>").arg(s.profile.c_str());
-    }
-    if (!s.level.empty()) {
-        html += QString("<p>Level: <b>%1</b></p>").arg(s.level.c_str());
-    }
+    row("Slices", QString("%1  (%2 / frame)").arg(s.sliceCount).arg(slicesPerFrame, 0, 'f', 2));
+    if (s.idrCount > 0)
+        row("GOP", QString("%1 IDR, avg %2 frames").arg(s.idrCount).arg(avgGop, 0, 'f', 2));
+    if (s.totalNals > 0)
+        row("NAL size", QString("avg %1 B / max %2 B / min %3 B")
+                .arg((int)avgNal).arg(s.maxNalSize).arg(s.minNalSize));
+    html += "</table>";
 
-    html += "<h4>NAL Type Distribution</h4>";
-    html += "<table border='0'>";
-    html += QString("<tr><td>IDR/Keyframe</td><td><b>%1</b></td></tr>").arg(s.idrCount);
-    html += QString("<tr><td>SPS</td><td><b>%1</b></td></tr>").arg(s.spsCount);
-    html += QString("<tr><td>PPS</td><td><b>%1</b></td></tr>").arg(s.ppsCount);
-    html += QString("<tr><td>VPS</td><td><b>%1</b></td></tr>").arg(s.vpsCount);
-    html += QString("<tr><td>SEI</td><td><b>%1</b></td></tr>").arg(s.seiCount);
-    html += QString("<tr><td>AUD</td><td><b>%1</b></td></tr>").arg(s.audCount);
-    html += QString("<tr><td>Frame slices</td><td><b>%1</b></td></tr>").arg(s.frameCount);
+    html += "<p style='margin:6px 0 3px 0'><b>NAL Type Distribution</b></p>";
+    html += "<table border='0' cellspacing='0' cellpadding='0'>";
+    row("IDR/Keyframe", QString::number(s.idrCount));
+    row("SPS", QString::number(s.spsCount));
+    row("PPS", QString::number(s.ppsCount));
+    if (s.vpsCount > 0) row("VPS", QString::number(s.vpsCount));
+    row("SEI / AUD", QString("%1 / %2").arg(s.seiCount).arg(s.audCount));
+    row("Slice NALs", QString::number(s.sliceCount));
     html += "</table>";
 
     m_statsPanel->setHtml(html);
@@ -347,6 +387,7 @@ void MainWindow::startPlayer() {
     m_totalFrames = m_frames.size();
     m_frameRate = m_playerDecoder.frameRate();
     m_playerDecoder.close();
+    updateStats();   // refresh stats that depend on decoded frames / frame rate
 
     if (m_frames.empty()) {
         m_videoLabel->setText("No frames decoded");
@@ -396,10 +437,8 @@ void MainWindow::highlightFrame(int frameIdx) {
     }
     if (!firstMatch) return;
 
-    // 只在目标行不可见时才滚动，并延迟到事件循环之后执行。
-    // 若在 currentItemChanged（鼠标按下时）里立刻 scrollToItem，视图会在
-    // 鼠标按下和释放之间滚动，释放时指针已落在另一行上，选中就被改到那一行，
-    // 表现为“点第 40 帧却跳到别的帧”。行已可见时不滚动，点击就不会受影响。
+    // Scroll to the highlighted row only when it is off-screen, and defer it
+    // so it does not interfere with the click that selected the row.
     QRect itemRect = m_nalList->visualItemRect(firstMatch);
     if (!m_nalList->viewport()->rect().intersects(itemRect)) {
         QTimer::singleShot(0, this, [this, frameIdx]() {
@@ -441,7 +480,7 @@ void MainWindow::onSpeedChanged(int index) {
     double speed = m_speedCombo->itemData(index).toDouble();
     if (speed <= 0.0) speed = 1.0;
     m_playbackSpeed = speed;
-    if (m_isPlaying)                       // 播放中切换倍速立即生效
+    if (m_isPlaying)                       // apply the new speed while playing
         m_playerTimer->start(playerIntervalMs());
 }
 

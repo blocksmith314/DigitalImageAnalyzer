@@ -30,6 +30,12 @@ struct StreamStats {
     uint32_t seiCount = 0;
     uint32_t audCount = 0;
     uint32_t frameCount = 0;
+    uint32_t sliceCount = 0;     // number of slice NALs
+    uint32_t iFrameCount = 0;
+    uint32_t pFrameCount = 0;
+    uint32_t bFrameCount = 0;
+    uint32_t maxNalSize = 0;
+    uint32_t minNalSize = 0;
     uint32_t width = 0;
     uint32_t height = 0;
     std::string profile;

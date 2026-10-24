@@ -1,4 +1,4 @@
-# 测试流生成器（依赖 FFmpeg 编码器）
+# Test stream generator (requires FFmpeg encoders)
 add_executable(gen gen.cpp)
 
 target_link_libraries(gen PRIVATE
@@ -8,7 +8,7 @@ target_link_libraries(gen PRIVATE
     m
 )
 
-# 解析核心源码（test_map / test_poc 不需要 FFmpeg，只复用 core 的解析代码）
+# Parser core sources shared by test_map / test_poc (no FFmpeg needed)
 set(TEST_CORE_SOURCES
     ${CMAKE_SOURCE_DIR}/core/bitstreamparser.cpp
     ${CMAKE_SOURCE_DIR}/core/expgolomb.cpp
@@ -16,14 +16,14 @@ set(TEST_CORE_SOURCES
     ${CMAKE_SOURCE_DIR}/core/h265types.cpp
 )
 
-# 打印 H.264 slice header 解析结果（frame_num / POC）
+# Prints parsed H.264 slice headers (frame_num / POC)
 add_executable(test_poc test_poc.cpp ${TEST_CORE_SOURCES})
 target_include_directories(test_poc PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
 )
 
-# 校验 NALAnalyzer 的帧分组与 PTS 排序结果
+# Verifies NALAnalyzer frame grouping and PTS ordering
 add_executable(test_map test_map.cpp
     ${TEST_CORE_SOURCES}
     ${CMAKE_SOURCE_DIR}/core/nalanalyzer.cpp
@@ -33,5 +33,5 @@ target_include_directories(test_map PRIVATE
     ${CMAKE_SOURCE_DIR}/core
 )
 
-# 不设置 RUNTIME_OUTPUT_DIRECTORY，三个目标的产物默认输出到构建目录
-# （即 build/test/），源码目录 test/ 只保留源码和已提交的测试码流。
+# No RUNTIME_OUTPUT_DIRECTORY: binaries go to the build tree (build/test/),
+# while test/ keeps sources and the committed test streams only.

@@ -62,7 +62,7 @@ bool BitstreamParser::parseBuffer(const uint8_t *data, size_t len) {
     m_error.clear();
 
     if (m_codec == CodecType::H264) {
-        // H.265 起始码后第一字节 NAL type > 31，自动检测
+        // Auto-detect codec (H.265 NAL type > 31)
         m_codec = detectCodec(data, len);
     }
 
@@ -79,9 +79,9 @@ bool BitstreamParser::parseBuffer(const uint8_t *data, size_t len) {
 
     while (true) {
         size_t searchFrom = currentStart + currentScLen;
-        // H.264 的 NAL 起始码后有防竞争字节，要跳过
+        // H.264: skip the 1-byte NAL header
         if (m_codec == CodecType::H264 && searchFrom < len) searchFrom += 1;
-        // H.265 有两个 header byte
+        // H.265: skip the 2-byte NAL header
         if (m_codec == CodecType::H265 && searchFrom < len) searchFrom += 2;
 
         uint8_t nextScLen = 0;
@@ -100,7 +100,7 @@ bool BitstreamParser::parseBuffer(const uint8_t *data, size_t len) {
         nal.startCodeLen = currentScLen;
         nal.data.assign(data + currentStart, data + endPos);
 
-        // 去掉起始码
+        // Strip the start code
         if (nal.data.size() > currentScLen) {
             nal.headerByte = nal.data[currentScLen];
         }
