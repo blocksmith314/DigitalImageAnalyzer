@@ -2,6 +2,8 @@
 
 **Inspect, understand and play H.264/AVC and H.265/HEVC bitstreams.**
 
+**English** | [简体中文](README_CN.md)
+
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#building)
 [![Latest release](https://img.shields.io/github/v/release/blocksmith314/DigitalImageAnalyzer)](https://github.com/blocksmith314/DigitalImageAnalyzer/releases)
