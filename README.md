@@ -80,6 +80,28 @@ cmake --build build
 The **Step:** spin box sets how many frames the arrow keys and the
 previous/next buttons jump (1–1000).
 
+## Sample media
+
+`test/fetch_bbb.sh` downloads **Big Buck Bunny** (720p, 10 s) and prepares
+sample bitstreams in `samples/`:
+
+| File | Contents |
+|------|----------|
+| `bbb_720p.mp4` | H.264 MP4 (video only) |
+| `bbb_720p.h264` | H.264 Annex B raw stream |
+| `bbb_720p.h265` | H.265/HEVC Annex B raw stream |
+| `bbb_av.mp4` | H.264 + AAC tone, for A/V sync checks |
+
+```sh
+./test/fetch_bbb.sh            # writes to ./samples
+./test/fetch_bbb.sh /tmp/bbb   # or a custom directory
+```
+
+> Big Buck Bunny © Blender Foundation, licensed under
+> [CC-BY 3.0](https://creativecommons.org/licenses/by/3.0/), see
+> <https://peach.blender.org>. The media is downloaded on demand and is not
+> part of this repository.
+
 ## Release artifacts
 
 Prebuilt binaries are attached to GitHub Releases:

@@ -87,3 +87,6 @@ trace.txt
 # release artifacts
 dist/
 *.zip
+
+# downloaded sample media
+samples/
