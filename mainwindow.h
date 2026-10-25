@@ -22,6 +22,7 @@
 
 class AudioPlayer;
 class NalListModel;
+class QSplitter;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -63,6 +64,8 @@ private:
     void enterFullscreen();
     void exitFullscreen();
     void updateFullscreenFrame();
+    void syncSplitterWidths(bool fromTop = true);
+    void applySplitFraction();
     void stopPlayback();
     void highlightFrame(int frameIdx);
     int playerIntervalMs() const;
@@ -75,6 +78,10 @@ private:
     std::string m_currentPath;
 
     QTreeView *m_nalList = nullptr;
+    QSplitter *m_topSplit = nullptr;
+    QSplitter *m_bottomSplit = nullptr;
+    double m_splitFraction = 600.0 / 1400.0;
+    bool m_syncingSplitters = false;
     NalListModel *m_nalModel = nullptr;
     QTextBrowser *m_details = nullptr;
     QTextBrowser *m_statsPanel = nullptr;

@@ -114,7 +114,10 @@ void MainWindow::setupUI() {
     m_videoLabel->setScaledContents(false);
     m_videoLabel->installEventFilter(this);
     m_videoLabel->setToolTip("Double-click for fullscreen");
-    m_videoLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    // Ignore the pixmap size hint: the label must not force the player panel
+    // wider than the NAL Details panel. The image is scaled to fit instead.
+    m_videoLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    m_videoLabel->setMinimumSize(1, 240);
 
     m_playerTimer = new QTimer(this);
     connect(m_playerTimer, &QTimer::timeout, this, &MainWindow::onPlayerTick);
@@ -128,10 +131,12 @@ void MainWindow::setupUI() {
     connect(playShortcut, &QShortcut::activated, this, &MainWindow::onPlayPause);
 
     m_playBtn = new QPushButton("Play");
+    m_playBtn->setFixedWidth(64);
     m_playBtn->setEnabled(false);
     connect(m_playBtn, &QPushButton::clicked, this, &MainWindow::onPlayPause);
 
     m_stopBtn = new QPushButton("Stop");
+    m_stopBtn->setFixedWidth(64);
     m_stopBtn->setEnabled(false);
     connect(m_stopBtn, &QPushButton::clicked, this, &MainWindow::onStop);
 
@@ -164,7 +169,7 @@ void MainWindow::setupUI() {
 
     m_seekSlider = new QSlider(Qt::Horizontal);
     m_seekSlider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    m_seekSlider->setMinimumWidth(300);
+    m_seekSlider->setMinimumWidth(60);
     m_seekSlider->setRange(0, 0);
     connect(m_seekSlider, &QSlider::valueChanged, this, &MainWindow::onSeek);
 
@@ -194,6 +199,7 @@ void MainWindow::setupUI() {
     controlRow->addWidget(m_stepSpin);
     controlRow->addWidget(m_speedCombo);
     controlRow->addWidget(m_seekSlider, 1);
+    m_frameInfoLabel->setMinimumWidth(0);
     controlRow->addWidget(m_frameInfoLabel);
 
     QGroupBox *playerGroup = new QGroupBox("Video Player");
@@ -235,11 +241,15 @@ void MainWindow::setupUI() {
 
     // Keep the horizontal split position of both rows in sync
     connect(topSplit, &QSplitter::splitterMoved, this,
-            [topSplit, bottomSplit](int, int) { bottomSplit->setSizes(topSplit->sizes()); });
+            [this](int, int) { syncSplitterWidths(true); });
     connect(bottomSplit, &QSplitter::splitterMoved, this,
-            [topSplit, bottomSplit](int, int) { topSplit->setSizes(bottomSplit->sizes()); });
+            [this](int, int) { syncSplitterWidths(false); });
 
     setCentralWidget(mainSplit);
+    m_topSplit = topSplit;
+    m_bottomSplit = bottomSplit;
+    // Align the two rows after the first layout pass.
+    QTimer::singleShot(0, this, [this]() { applySplitFraction(); });
 
     m_timeInfoLabel = new QLabel();
     statusBar()->addWidget(m_timeInfoLabel);
@@ -723,6 +733,48 @@ void MainWindow::saveRecentFiles() {
     settings.setValue("recentFiles", m_recentFiles);
 }
 
+void MainWindow::syncSplitterWidths(bool fromTop) {
+    if (!m_topSplit || !m_bottomSplit || m_syncingSplitters) return;
+
+    // Remember the split position the user chose and apply it to both rows.
+    QSplitter *source = fromTop ? m_topSplit : m_bottomSplit;
+    const QList<int> sizes = source->sizes();
+    if (sizes.size() < 2) return;
+    const int total = sizes[0] + sizes[1] + m_topSplit->handleWidth();
+    // Ignore degenerate layouts reported before the window is fully sized.
+    if (total > 400) m_splitFraction = (double)sizes[0] / (double)total;
+
+    applySplitFraction();
+}
+
+void MainWindow::applySplitFraction() {
+    if (!m_topSplit || !m_bottomSplit) return;
+
+    const int width = m_topSplit->width() - m_topSplit->handleWidth();
+    if (width <= 0) return;
+
+    const int left = qBound(0, (int)(m_splitFraction * width), width);
+    const QList<int> sizes{left, width - left};
+
+    m_syncingSplitters = true;
+    m_topSplit->setSizes(sizes);
+    m_bottomSplit->setSizes(sizes);
+
+    // If a row could not honour the split because of its minimum widths,
+    // align both rows to the wider right-hand panel that resulted.
+    const QList<int> top = m_topSplit->sizes();
+    const QList<int> bottom = m_bottomSplit->sizes();
+    if (top.size() >= 2 && bottom.size() >= 2) {
+        const int total = top[0] + top[1] + m_topSplit->handleWidth();
+        const int right = qMax(top[1], bottom[1]);
+        const int alignedLeft = qMax(0, total - right - m_topSplit->handleWidth());
+        const QList<int> aligned{alignedLeft, total - alignedLeft - m_topSplit->handleWidth()};
+        m_topSplit->setSizes(aligned);
+        m_bottomSplit->setSizes(aligned);
+    }
+    m_syncingSplitters = false;
+}
+
 bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
     if (event->type() == QEvent::MouseButtonDblClick &&
         (watched == m_videoLabel || watched == m_fullscreenLabel)) {
@@ -792,6 +844,9 @@ void MainWindow::closeEvent(QCloseEvent *event) {
 
 void MainWindow::resizeEvent(QResizeEvent *event) {
     QMainWindow::resizeEvent(event);
+
+    // Keep the right-hand panels (Video Player / NAL Details) equally wide.
+    applySplitFraction();
     if (!m_currentImage.isNull() && m_videoLabel) {
         const QSize newSize = m_videoLabel->size();
         if (newSize != m_videoSize && newSize.width() > 0 && newSize.height() > 0) {
