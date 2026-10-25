@@ -88,5 +88,3 @@ trace.txt
 dist/
 *.zip
 
-# downloaded sample media
-samples/

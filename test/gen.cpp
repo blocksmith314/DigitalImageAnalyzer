@@ -10,7 +10,6 @@ extern "C" {
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <algorithm>
 
 static const uint8_t FONT5x7[][5] = {
     {0x00,0x00,0x00,0x00,0x00}, // ' '
@@ -144,112 +143,6 @@ static void fill_checkerboard(AVFrame *frame, int tile) {
         for (int x = 0; x < half_w; x++) {
             frame->data[1][y * ustride + x] = 128;
             frame->data[2][y * ustride + x] = 128;
-        }
-    }
-}
-
-static void yuv_from_rgb(double r, double g, double b, uint8_t &Y, uint8_t &U, uint8_t &V) {
-    const double y = 16.0 + 219.0 * (0.299 * r + 0.587 * g + 0.114 * b);
-    const double u = 128.0 + 224.0 * (0.5 * b - 0.168736 * r - 0.331264 * g);
-    const double v = 128.0 + 224.0 * (0.5 * r - 0.418688 * g - 0.081312 * b);
-    Y = (uint8_t)std::clamp(y, 0.0, 255.0);
-    U = (uint8_t)std::clamp(u, 0.0, 255.0);
-    V = (uint8_t)std::clamp(v, 0.0, 255.0);
-}
-
-static void palette_color(double t, double &r, double &g, double &b) {
-    static const double stops[6][3] = {
-        {0.02, 0.02, 0.12}, {0.05, 0.22, 0.62}, {0.08, 0.68, 0.92},
-        {0.55, 0.92, 0.75}, {1.00, 0.86, 0.35}, {1.00, 1.00, 1.00},
-    };
-    double x = fmod(t, 6.0);
-    if (x < 0) x += 6.0;
-    const int i = (int)x;
-    const double f = x - i;
-    const double *a = stops[i];
-    const double *b2 = stops[(i + 1) % 6];
-    r = a[0] * (1.0 - f) + b2[0] * f;
-    g = a[1] * (1.0 - f) + b2[1] * f;
-    b = a[2] * (1.0 - f) + b2[2] * f;
-}
-
-// Animated Mandelbrot zoom into "Seahorse Valley"; smooth cosine palette.
-static void render_mandelbrot(AVFrame *frame, int f, int total) {
-    const int w = frame->width, h = frame->height;
-    const int ystride = frame->linesize[0];
-    const int ustride = frame->linesize[1];
-    const double progress = (total > 1) ? (double)f / (total - 1) : 0.0;
-
-    // Start on the whole set, then fly into "Seahorse Valley".
-    const double targetX = -0.7436438870371587;
-    const double targetY = 0.1318259042053119;
-    const double p2 = progress * progress;
-    const double centerX = -0.5 + (targetX + 0.5) * p2;
-    const double centerY = 0.0 + targetY * p2;
-    const double zoom = exp(log(60.0) * p2);
-    const double scale = 1.25 / zoom;
-    const double angle = progress * 0.20;
-    const double ca = cos(angle), sa = sin(angle);
-    const double aspect = (double)w / (double)h;
-    const int maxIter = 220;
-
-    for (int y = 0; y < h; y++) {
-        const double py = ((y + 0.5) / h * 2.0 - 1.0) * scale;
-        for (int x = 0; x < w; x++) {
-            const double px = ((x + 0.5) / w * 2.0 - 1.0) * scale * aspect;
-            const double cr = centerX + px * ca - py * sa;
-            const double ci = centerY + px * sa + py * ca;
-
-            double zr = 0.0, zi = 0.0, zr2 = 0.0, zi2 = 0.0;
-            int i = 0;
-
-            // Main cardioid / period-2 bulb shortcut avoids most interior work.
-            const double q = (cr - 0.25) * (cr - 0.25) + ci * ci;
-            const bool interior = (q * (q + (cr - 0.25)) <= 0.25 * ci * ci) ||
-                                  ((cr + 1.0) * (cr + 1.0) + ci * ci <= 0.0625);
-            if (!interior) {
-                for (; i < maxIter && zr2 + zi2 <= 4.0; i++) {
-                    zi = 2.0 * zr * zi + ci;
-                    zr = zr2 - zi2 + cr;
-                    zr2 = zr * zr;
-                    zi2 = zi * zi;
-                }
-            }
-
-            double r = 0.02, g = 0.02, b = 0.05;   // near-black interior
-            if (i < maxIter && !interior) {
-                const double logZn = log(zr2 + zi2) * 0.5;
-                const double nu = log(logZn / log(2.0)) / log(2.0);
-                const double t = i + 1 - nu;
-                palette_color(t * 0.06, r, g, b);
-            }
-
-            uint8_t Y, U, V;
-            yuv_from_rgb(r, g, b, Y, U, V);
-            frame->data[0][y * ystride + x] = Y;
-            if ((x & 1) == 0 && (y & 1) == 0) {
-                frame->data[1][(y / 2) * ustride + x / 2] = U;
-                frame->data[2][(y / 2) * ustride + x / 2] = V;
-            }
-        }
-    }
-}
-
-static void fill_color_bars(AVFrame *frame) {
-    static const uint8_t kBar[8][3] = {
-        {235, 128, 128}, {210, 16, 146}, {170, 166, 16}, {145, 54, 34},
-        {106, 202, 222}, {81, 90, 240},  {41, 240, 110}, {16, 128, 128},
-    };
-    const int w = frame->width, h = frame->height;
-    const int ystride = frame->linesize[0];
-    const int ustride = frame->linesize[1];
-    for (int x = 0; x < w; x++) {
-        const int bar = x * 8 / w;
-        const uint8_t yv = kBar[bar][0], u = kBar[bar][1], v = kBar[bar][2];
-        for (int y = 0; y < h; y++) frame->data[0][y * ystride + x] = yv;
-        for (int y = 0; y < (h + 1) / 2; y++) {
-            frame->data[1][y * ustride + x / 2] = u;
-            frame->data[2][y * ustride + x / 2] = v;
         }
     }
 }
@@ -415,41 +308,39 @@ int main(int argc, char **argv) {
     int sine_cycles = 2;
 
     for (int f = 0; f < total_frames; f++) {
-        const double progress = (total_frames > 1) ? (double)f / (total_frames - 1) : 0.0;
+        double t = (double)f / fps;
+        double progress = (double)f / (total_frames - 1);
 
-        render_mandelbrot(frame, f, total_frames);
+        fill_checkerboard(frame, 16);
 
-        // Large frame number on a dark band so it stays readable on any bar.
-        char label[48];
-        snprintf(label, sizeof(label), "FRAME %d", f);
-        const int num_scale = std::max(2, width / 220);
-        const int num_w = (int)strlen(label) * 6 * num_scale;
-        draw_filled_rect_yuv(frame, 0, 0, width, num_scale * 7 + 14, 22, 128, 128);
-        draw_text_yuv(frame, label, (width - num_w) / 2, 8, 235, 128, 128, num_scale);
+        double box_x = start_x + (end_x - start_x) * progress;
+        double box_y = y_center + y_amplitude * sin(progress * 2.0 * M_PI * sine_cycles);
 
-        // Timecode in the bottom-left corner (after the key-frame marker).
-        const int key_w = std::max(4, width / 160);
-        const int total_sec = f / fps;
-        const int sub = (f % fps) * 100 / (fps > 0 ? fps : 1);
-        char tc[32];
-        snprintf(tc, sizeof(tc), "%02d:%02d.%02d", total_sec / 60, total_sec % 60, sub);
-        draw_filled_rect_yuv(frame, key_w + 4, height - 32, 12 * (int)strlen(tc) + 8, 24, 22, 128, 128);
-        draw_text_yuv(frame, tc, key_w + 8, height - 28, 235, 128, 128, 2);
+        int ix = (int)box_x;
+        int iy = (int)box_y;
 
-        // Resolution / frame rate in the bottom-right corner.
-        char info[48];
-        snprintf(info, sizeof(info), "%dX%d %dFPS", width, height, fps);
-        const int info_w = 12 * (int)strlen(info);
-        draw_filled_rect_yuv(frame, width - info_w - 12, height - 32, info_w + 8, 24, 22, 128, 128);
-        draw_text_yuv(frame, info, width - info_w - 8, height - 28, 235, 128, 128, 2);
+        uint8_t frame_num = (uint8_t)(200 + (f * 13) % 40);
+        draw_filled_rect_yuv(frame, ix, iy, (int)box_w, (int)box_h,
+                             235, 80, 240);
 
-        // Progress bar along the bottom edge; key frames get a bright left bar.
-        const int bar_h = std::max(4, height / 60);
-        const int bar_y = height - bar_h;
-        draw_filled_rect_yuv(frame, 0, bar_y, width, bar_h, 40, 128, 128);
-        draw_filled_rect_yuv(frame, 0, bar_y, (int)(width * progress), bar_h, 200, 128, 128);
+        char pos[48];
+        snprintf(pos, sizeof(pos), "F=%d", f);
+        draw_text_yuv(frame, pos, 8, 8, 235, 128, 128, 2);
+
+        char label[32];
+        format_number(label, f, 4);
+        int label_scale = 2;
+        int label_w = 6 * 5 * label_scale;
+        draw_text_yuv(frame, label, width - label_w - 8, 8,
+                      235, 128, 128, label_scale);
+
+        snprintf(pos, sizeof(pos), "%dX%d %dFPS", width, height, fps);
+        draw_text_yuv(frame, pos, 8, height - 22, 235, 128, 128, 2);
+
+        char key_label[16];
         if (f == 0 || f % keyint == 0) {
-            draw_filled_rect_yuv(frame, 0, 0, key_w, height, 255, 128, 128);
+            snprintf(key_label, sizeof(key_label), "KEY");
+            draw_text_yuv(frame, key_label, width - 50, height - 22, 235, 128, 128, 2);
         }
 
         frame->pts = f;
