@@ -1,6 +1,7 @@
 #pragma once
 
 #include "nalunit.h"
+#include "platformfile.h"
 #include <functional>
 #include <string>
 #include <vector>
@@ -41,8 +42,9 @@ public:
     // Pointer to the first byte (start code) of a NAL unit inside the file
     // mapping / buffer. Valid until the next parse or destruction.
     const uint8_t *nalData(const NALUnit &nal) const {
-        if (m_mapSize > 0 && nal.offset >= (uint64_t)m_mapSize)
-            return m_extra.empty() ? nullptr : m_extra.data() + (nal.offset - m_mapSize);
+        const uint64_t mapped = m_mapped.size();
+        if (mapped > 0 && nal.offset >= mapped)
+            return m_extra.empty() ? nullptr : m_extra.data() + (nal.offset - mapped);
         return m_base ? m_base + nal.offset : nullptr;
     }
 
@@ -61,7 +63,6 @@ private:
     std::string m_error;
     std::vector<uint8_t> m_buffer;   // owned copy when parsing a memory buffer
     std::vector<uint8_t> m_extra;    // extradata NALs (avcC/hvcC)
-    void *m_map = nullptr;           // mmap of the file when parsing a path
-    size_t m_mapSize = 0;
+    MappedFile m_mapped;             // file mapping when parsing a path
     const uint8_t *m_base = nullptr;
 };

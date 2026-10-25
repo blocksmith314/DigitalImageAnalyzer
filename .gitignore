@@ -84,3 +84,6 @@ compile_commands.json
 .idea
 .cache
 trace.txt
+# release artifacts
+dist/
+*.zip

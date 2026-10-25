@@ -12,7 +12,3 @@
 // raw Annex B elementary stream (as opposed to a container).
 bool probeVideoFile(const std::string &path, CodecType &codec, bool &isRawAnnexB,
                     std::string &error);
-
-bool buildAnnexBFile(const std::string &path, std::string &annexBPath,
-                     CodecType &codec, std::string &error,
-                     const std::function<bool(double)> &progress = {});

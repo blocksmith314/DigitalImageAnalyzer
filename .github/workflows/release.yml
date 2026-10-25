@@ -1,0 +1,111 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos-arm64:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install cmake ninja qt ffmpeg pkg-config
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Bundle
+        run: |
+          chmod +x scripts/bundle_macos.sh
+          scripts/bundle_macos.sh build/DigitalImageAnalyzer.app
+          ditto -c -k --keepParent build/DigitalImageAnalyzer.app DigitalImageAnalyzer-macos-arm64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: DigitalImageAnalyzer-macos-arm64.zip
+
+  macos-intel:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install cmake ninja qt ffmpeg pkg-config
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Bundle
+        run: |
+          chmod +x scripts/bundle_macos.sh
+          scripts/bundle_macos.sh build/DigitalImageAnalyzer.app
+          ditto -c -k --keepParent build/DigitalImageAnalyzer.app DigitalImageAnalyzer-macos-intel.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-intel
+          path: DigitalImageAnalyzer-macos-intel.zip
+
+  windows-x64:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-qt6-base
+            mingw-w64-x86_64-qt6-multimedia
+            mingw-w64-x86_64-ffmpeg
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/mingw64
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Bundle
+        run: |
+          chmod +x scripts/bundle_windows.sh
+          scripts/bundle_windows.sh build/DigitalImageAnalyzer.exe dist
+          (cd dist && 7z a ../DigitalImageAnalyzer-windows-x64.zip .)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: DigitalImageAnalyzer-windows-x64.zip
+
+  release:
+    needs: [macos-arm64, macos-intel, windows-x64]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.zip
+          generate_release_notes: true

@@ -26,6 +26,8 @@ qt_add_executable(DigitalImageAnalyzer
     nallistmodel.cpp
 
     core/nalunit.h
+    core/platformfile.h
+    core/platformfile.cpp
     core/expgolomb.h
     core/expgolomb.cpp
     core/bitstreamparser.h

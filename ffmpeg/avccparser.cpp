@@ -3,11 +3,6 @@
 #include <algorithm>
 #include <cstring>
 
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
@@ -119,27 +114,8 @@ bool BitstreamParser::parseAvcc(const std::string &path, CodecType &codec,
     resetStorage();
     m_error.clear();
 
-    const int fd = ::open(path.c_str(), O_RDONLY);
-    if (fd < 0) {
-        m_error = "Cannot open file";
-        return false;
-    }
-    struct stat st {};
-    if (::fstat(fd, &st) != 0 || st.st_size <= 0) {
-        ::close(fd);
-        m_error = "Cannot stat file";
-        return false;
-    }
-    m_mapSize = (size_t)st.st_size;
-    void *map = ::mmap(nullptr, m_mapSize, PROT_READ, MAP_PRIVATE, fd, 0);
-    ::close(fd);
-    if (map == MAP_FAILED) {
-        m_mapSize = 0;
-        m_error = "Cannot map file";
-        return false;
-    }
-    m_map = map;
-    m_base = static_cast<const uint8_t *>(map);
+    if (!m_mapped.open(path, m_error)) return false;
+    m_base = m_mapped.data();
 
     AVFormatContext *fmt = nullptr;
     if (avformat_open_input(&fmt, path.c_str(), nullptr, nullptr) < 0) {
@@ -183,7 +159,7 @@ bool BitstreamParser::parseAvcc(const std::string &path, CodecType &codec,
     m_codec = codec;
 
     int lengthSize = 4;
-    appendExtradataNals(m_nals, m_extra, m_mapSize, par, codec, lengthSize);
+    appendExtradataNals(m_nals, m_extra, m_mapped.size(), par, codec, lengthSize);
 
     AVPacket *pkt = av_packet_alloc();
     const int64_t totalFrames = (stream->nb_frames > 0) ? stream->nb_frames : 0;

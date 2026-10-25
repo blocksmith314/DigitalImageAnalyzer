@@ -3,11 +3,6 @@
 #include <algorithm>
 #include <cstring>
 
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
 namespace {
 
 struct Box {
@@ -133,29 +128,11 @@ bool BitstreamParser::parseMp4Indexed(const std::string &path, CodecType &codec,
     resetStorage();
     m_error.clear();
 
-    const int fd = ::open(path.c_str(), O_RDONLY);
-    if (fd < 0) {
-        m_error = "Cannot open file";
-        return false;
-    }
-    struct stat st {};
-    if (::fstat(fd, &st) != 0 || st.st_size <= 0) {
-        ::close(fd);
-        m_error = "Cannot stat file";
-        return false;
-    }
-    m_mapSize = (size_t)st.st_size;
-    void *map = ::mmap(nullptr, m_mapSize, PROT_READ, MAP_PRIVATE, fd, 0);
-    ::close(fd);
-    if (map == MAP_FAILED) {
-        m_mapSize = 0;
-        m_error = "Cannot map file";
-        return false;
-    }
-    m_map = map;
-    m_base = static_cast<const uint8_t *>(map);
+    if (!m_mapped.open(path, m_error)) return false;
+    m_base = m_mapped.data();
+
     const uint8_t *data = m_base;
-    const uint64_t fileSize = m_mapSize;
+    const uint64_t fileSize = m_mapped.size();
 
     // ---- locate moov ----
     Box moov;
@@ -258,7 +235,7 @@ bool BitstreamParser::parseMp4Indexed(const std::string &path, CodecType &codec,
     }
     int lengthSize = 4;
     appendExtradata(data + cfg.offset + 8, (int)(cfg.size - 8), codec, m_nals, m_extra,
-                    m_mapSize, lengthSize);
+                    m_mapped.size(), lengthSize);
 
     // ---- sample sizes ----
     if (stszBox.size < 20) {

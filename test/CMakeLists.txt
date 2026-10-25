@@ -11,6 +11,7 @@ target_link_libraries(gen PRIVATE
 # Parser core sources shared by test_map / test_poc (no FFmpeg needed)
 set(TEST_CORE_SOURCES
     ${CMAKE_SOURCE_DIR}/core/bitstreamparser.cpp
+    ${CMAKE_SOURCE_DIR}/core/platformfile.cpp
     ${CMAKE_SOURCE_DIR}/core/expgolomb.cpp
     ${CMAKE_SOURCE_DIR}/core/h264types.cpp
     ${CMAKE_SOURCE_DIR}/core/h265types.cpp

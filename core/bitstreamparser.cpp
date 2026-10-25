@@ -4,11 +4,6 @@
 #include <cstdio>
 #include <cstring>
 
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
 BitstreamParser::BitstreamParser(CodecType codec) : m_codec(codec) {}
 
 BitstreamParser::~BitstreamParser() { resetStorage(); }
@@ -18,11 +13,8 @@ BitstreamParser::BitstreamParser(BitstreamParser &&other) noexcept
       m_nals(std::move(other.m_nals)),
       m_error(std::move(other.m_error)),
       m_buffer(std::move(other.m_buffer)),
-      m_map(other.m_map),
-      m_mapSize(other.m_mapSize),
+      m_mapped(std::move(other.m_mapped)),
       m_base(other.m_base) {
-    other.m_map = nullptr;
-    other.m_mapSize = 0;
     other.m_base = nullptr;
 }
 
@@ -33,28 +25,19 @@ BitstreamParser &BitstreamParser::operator=(BitstreamParser &&other) noexcept {
         m_nals = std::move(other.m_nals);
         m_error = std::move(other.m_error);
         m_buffer = std::move(other.m_buffer);
-        m_map = other.m_map;
-        m_mapSize = other.m_mapSize;
+        m_mapped = std::move(other.m_mapped);
         m_base = other.m_base;
-        other.m_map = nullptr;
-        other.m_mapSize = 0;
         other.m_base = nullptr;
     }
     return *this;
 }
 
 void BitstreamParser::releaseMappedPages() {
-    if (m_map && m_mapSize > 0) {
-        madvise(m_map, m_mapSize, MADV_DONTNEED);
-    }
+    m_mapped.releaseResidentPages();
 }
 
 void BitstreamParser::resetStorage() {
-    if (m_map) {
-        munmap(m_map, m_mapSize);
-        m_map = nullptr;
-    }
-    m_mapSize = 0;
+    m_mapped.close();
     m_base = nullptr;
     m_buffer.clear();
     m_extra.clear();
@@ -100,31 +83,9 @@ bool BitstreamParser::parseFile(const std::string &path, const ProgressFn &progr
     resetStorage();
     m_error.clear();
 
-    const int fd = ::open(path.c_str(), O_RDONLY);
-    if (fd < 0) {
-        m_error = "Cannot open file: " + path;
-        return false;
-    }
-
-    struct stat st {};
-    if (::fstat(fd, &st) != 0 || st.st_size <= 0) {
-        ::close(fd);
-        m_error = "Cannot stat file or file is empty";
-        return false;
-    }
-
-    m_mapSize = (size_t)st.st_size;
-    void *map = ::mmap(nullptr, m_mapSize, PROT_READ, MAP_PRIVATE, fd, 0);
-    ::close(fd);
-    if (map == MAP_FAILED) {
-        m_mapSize = 0;
-        m_error = "Cannot map file into memory";
-        return false;
-    }
-
-    m_map = map;
-    m_base = static_cast<const uint8_t *>(map);
-    return scan(m_base, m_mapSize, progress);
+    if (!m_mapped.open(path, m_error)) return false;
+    m_base = m_mapped.data();
+    return scan(m_base, (size_t)m_mapped.size(), progress);
 }
 
 bool BitstreamParser::parseBuffer(const uint8_t *data, size_t len) {
