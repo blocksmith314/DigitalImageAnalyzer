@@ -79,6 +79,7 @@ jobs:
             mingw-w64-x86_64-qt6-base
             mingw-w64-x86_64-qt6-multimedia
             mingw-w64-x86_64-ffmpeg
+            zip
 
       - name: Configure
         run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/mingw64
@@ -90,7 +91,7 @@ jobs:
         run: |
           chmod +x scripts/bundle_windows.sh
           scripts/bundle_windows.sh build/DigitalImageAnalyzer.exe dist
-          (cd dist && 7z a ../DigitalImageAnalyzer-windows-x64.zip .)
+          (cd dist && zip -r ../DigitalImageAnalyzer-windows-x64.zip .)
 
       - uses: actions/upload-artifact@v4
         with:
