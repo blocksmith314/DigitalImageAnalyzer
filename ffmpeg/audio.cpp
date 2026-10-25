@@ -18,6 +18,16 @@ extern "C" {
 
 namespace {
 
+int bytesPerSampleOf(QAudioFormat::SampleFormat f) {
+    switch (f) {
+        case QAudioFormat::UInt8: return 1;
+        case QAudioFormat::Int16: return 2;
+        case QAudioFormat::Int32: return 4;
+        case QAudioFormat::Float: return 4;
+        default: return 2;
+    }
+}
+
 AVSampleFormat toAvSampleFormat(QAudioFormat::SampleFormat f) {
     switch (f) {
         case QAudioFormat::UInt8: return AV_SAMPLE_FMT_U8;
@@ -273,7 +283,7 @@ void AudioPlayer::pump() {
                 av_frame_unref(m_impl->frame);
                 continue;
             }
-            const int bytesPerSample = m_impl->outFormat.bytesPerSample();
+            const int bytesPerSample = bytesPerSampleOf(m_impl->outFormat.sampleFormat());
             const int channels = m_impl->outFormat.channelCount();
             const int maxBytes = outSamples * channels * bytesPerSample;
             if (maxBytes > m_impl->outBufSize) {

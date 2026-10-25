@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Digital Image Analyzer
+Comment=H.264/H.265 bitstream analyzer
+Exec=DigitalImageAnalyzer
+Icon=digitalimageanalyzer
+Categories=AudioVideo;Video;
+Terminal=false
