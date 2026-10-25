@@ -117,6 +117,10 @@ bool FFmpegDecoder::openFile(const std::string &path, CodecType codec) {
     return true;
 }
 
+bool FFmpegDecoder::hasTimestamps() const {
+    return m_impl && !m_impl->isRaw;
+}
+
 void FFmpegDecoder::close() {
     if (m_impl) {
         if (m_impl->swsCtx) {
@@ -178,6 +182,9 @@ bool FFmpegDecoder::decodeNextFrame(DecodedFrame &out) {
             QImage img(m_impl->rgbBuffer, m_width, m_height, QImage::Format_RGB888);
 
             out.pts = frame->pts;
+            out.ptsSec = (frame->pts != AV_NOPTS_VALUE)
+                             ? frame->pts * av_q2d(m_impl->fmtCtx->streams[m_impl->videoStreamIdx]->time_base)
+                             : 0.0;
             out.width = m_width;
             out.height = m_height;
             out.image = img.copy();
@@ -209,6 +216,9 @@ bool FFmpegDecoder::decodeNextFrame(DecodedFrame &out) {
         sws_scale(m_impl->swsCtx, frame->data, frame->linesize, 0, m_height, dst, dstLinesize);
         QImage img(m_impl->rgbBuffer, m_width, m_height, QImage::Format_RGB888);
         out.pts = frame->pts;
+        out.ptsSec = (frame->pts != AV_NOPTS_VALUE)
+                         ? frame->pts * av_q2d(m_impl->fmtCtx->streams[m_impl->videoStreamIdx]->time_base)
+                         : 0.0;
         out.width = m_width;
         out.height = m_height;
         out.image = img.copy();

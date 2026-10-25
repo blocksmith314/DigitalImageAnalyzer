@@ -14,12 +14,14 @@
 #include <QPushButton>
 #include <QComboBox>
 #include <QSpinBox>
+#include <QElapsedTimer>
 #include <unordered_map>
 #include "bitstreamparser.h"
 #include "nalanalyzer.h"
 #include "decoder.h"
 
 class AudioPlayer;
+class NalListModel;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -33,7 +35,7 @@ protected:
 private slots:
     void openFile();
     void openRecentFile();
-    void onNALSelected(QTreeWidgetItem *current, QTreeWidgetItem *previous);
+    void onNALSelected(int row);
     void onPlayPause();
     void onStop();
     void onStepForward();
@@ -61,6 +63,7 @@ private:
     void enterFullscreen();
     void exitFullscreen();
     void updateFullscreenFrame();
+    void stopPlayback();
     void highlightFrame(int frameIdx);
     int playerIntervalMs() const;
 
@@ -71,7 +74,8 @@ private:
     AudioPlayer *m_audio = nullptr;
     std::string m_currentPath;
 
-    QTreeWidget *m_nalList = nullptr;
+    QTreeView *m_nalList = nullptr;
+    NalListModel *m_nalModel = nullptr;
     QTextBrowser *m_details = nullptr;
     QTextBrowser *m_statsPanel = nullptr;
     QLabel *m_videoLabel = nullptr;
@@ -99,11 +103,14 @@ private:
     double m_playbackSpeed = 1.0;
     QSize m_videoSize;
     QImage m_currentImage;
+    DecodedFrame m_pendingFrame;
+    bool m_hasPending = false;
+    double m_currentPts = 0.0;
+    double m_clockStartPts = 0.0;
+    QElapsedTimer m_playClock;
     QWidget *m_fullscreenWindow = nullptr;
     QLabel *m_fullscreenLabel = nullptr;
     bool m_fullscreen = false;
-    std::unordered_map<int, std::vector<int>> m_frameRows;
-    std::vector<int> m_highlightedRows;
 
 protected:
     void resizeEvent(QResizeEvent *event) override;

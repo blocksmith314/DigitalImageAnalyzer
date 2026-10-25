@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "annexb.h"
 #include "audio.h"
+#include "nallistmodel.h"
 #include <QMenuBar>
 #include <QToolBar>
 #include <QSplitter>
@@ -68,9 +69,11 @@ void MainWindow::setupUI() {
     quitAct->setShortcut(QKeySequence::Quit);
     connect(quitAct, &QAction::triggered, this, &QWidget::close);
 
-    m_nalList = new QTreeWidget();
-    m_nalList->setColumnCount(9);
-    m_nalList->setHeaderLabels({"#", "NAL Type", "NAL Name", "Size", "Offset", "Frame Type", "DTS", "PTS", ""});
+    m_nalModel = new NalListModel(this);
+    m_nalList = new QTreeView();
+    m_nalList->setModel(m_nalModel);
+    m_nalList->setRootIsDecorated(false);
+    m_nalList->setUniformRowHeights(true);
     // First 8 columns keep fixed widths (NAL Name is auto-fitted in buildNALList());
     // the last empty column absorbs extra width so the table fills the panel.
     QHeaderView *hdr = m_nalList->header();
@@ -87,7 +90,10 @@ void MainWindow::setupUI() {
     m_nalList->setColumnWidth(7, 50);
     m_nalList->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_nalList->setAlternatingRowColors(true);
-    connect(m_nalList, &QTreeWidget::currentItemChanged, this, &MainWindow::onNALSelected);
+    connect(m_nalList->selectionModel(), &QItemSelectionModel::currentRowChanged,
+            this, [this](const QModelIndex &current, const QModelIndex &) {
+                if (current.isValid()) onNALSelected(current.row());
+            });
 
     m_statsPanel = new QTextBrowser();
     m_statsPanel->setOpenExternalLinks(false);
@@ -356,82 +362,7 @@ bool MainWindow::loadFile(const QString &path) {
 }
 
 void MainWindow::buildNALList() {
-    m_nalList->setUpdatesEnabled(false);
-    m_nalList->clear();
-    m_frameRows.clear();
-    m_highlightedRows.clear();
-
-    const auto &nals = m_parser.nalUnits();
-    const int total = (int)nals.size();
-    const int maxRows = 50000;          // keep the widget usable for huge files
-    const int shown = qMin(total, maxRows);
-
-    for (int i = 0; i < shown; i++) {
-        const auto &nal = nals[(size_t)i];
-        QStringList items;
-        items << QString::number(i);
-        items << QString::number(nal.nalType);
-        items << QString::fromStdString(nal.typeName());
-        items << QString::number(nal.size);
-        items << QString("0x%1").arg(nal.offset, 8, 16, QChar('0')).toUpper();
-        items << (nal.frameType ? QString(QChar(nal.frameType)) : QString("-"));
-        items << (nal.dtsIndex >= 0 ? QString::number(nal.dtsIndex) : QString("-"));
-        items << (nal.frameIndex >= 0 ? QString::number(nal.frameIndex) : QString("-"));
-        items << QString();   // empty spacer column
-
-        QTreeWidgetItem *item = new QTreeWidgetItem(items);
-        item->setData(0, Qt::UserRole, nal.frameIndex);
-
-        static QFont monoFont("Menlo");
-        monoFont.setStyleHint(QFont::Monospace);
-        item->setFont(3, monoFont);
-        item->setFont(4, monoFont);
-        item->setTextAlignment(3, Qt::AlignRight | Qt::AlignVCenter);
-        item->setTextAlignment(4, Qt::AlignRight | Qt::AlignVCenter);
-        item->setTextAlignment(0, Qt::AlignRight | Qt::AlignVCenter);
-        item->setTextAlignment(1, Qt::AlignRight | Qt::AlignVCenter);
-        item->setTextAlignment(5, Qt::AlignHCenter | Qt::AlignVCenter);
-        item->setTextAlignment(6, Qt::AlignRight | Qt::AlignVCenter);
-        item->setTextAlignment(7, Qt::AlignRight | Qt::AlignVCenter);
-
-        QColor color;
-        if (nal.codec == CodecType::H264) {
-            switch (nal.nalType) {
-                case 7: color = QColor(220, 200, 255); break;
-                case 8: color = QColor(200, 255, 220); break;
-                case 5: color = QColor(255, 200, 200); break;
-                case 6: color = QColor(255, 255, 200); break;
-                default: break;
-            }
-        } else {
-            switch (nal.nalType) {
-                case 32: color = QColor(255, 220, 255); break;
-                case 33: color = QColor(220, 200, 255); break;
-                case 34: color = QColor(200, 255, 220); break;
-                case 19: case 20: case 21: color = QColor(255, 200, 200); break;
-                case 39: case 40: color = QColor(255, 255, 200); break;
-                default: break;
-            }
-        }
-        if (color.isValid()) {
-            for (int c = 0; c < item->columnCount(); c++) {
-                item->setBackground(c, color);
-            }
-        }
-        item->setData(0, Qt::UserRole + 1, color.isValid() ? color : QVariant());
-
-        m_nalList->addTopLevelItem(item);
-        if (nal.frameIndex >= 0) m_frameRows[nal.frameIndex].push_back(i);
-    }
-
-    if (total > shown) {
-        QTreeWidgetItem *item = new QTreeWidgetItem(m_nalList);
-        item->setText(0, "...");
-        item->setText(2, QString("%1 more NAL units not listed").arg(total - shown));
-        item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
-    }
-
-    m_nalList->setUpdatesEnabled(true);
+    m_nalModel->setNalUnits(&m_parser.nalUnits());
     m_nalList->resizeColumnToContents(2);
 }
 
@@ -576,52 +507,32 @@ void MainWindow::showFrameAt(int idx) {
         return;
     }
     m_currentFrameIndex = idx;
+    m_currentPts = frame.ptsSec;
     showFrame(frame.image, idx);
 
-    if (jump && m_audio && m_audio->hasAudio() && m_frameRate > 0.0) {
-        m_audio->seekTo((double)idx / m_frameRate);
+    if (jump) {
+        m_hasPending = false;
+        m_clockStartPts = m_currentPts;
+        m_playClock.restart();
+        if (m_audio && m_audio->hasAudio()) {
+            const double seconds = m_playerDecoder.hasTimestamps() && m_frameRate > 0.0
+                                       ? m_currentPts
+                                       : (m_frameRate > 0.0 ? (double)idx / m_frameRate : 0.0);
+            m_audio->seekTo(seconds);
+        }
     }
 }
 
 void MainWindow::highlightFrame(int frameIdx) {
-    // Restore previously highlighted rows only (cheap for large streams).
-    for (int row : m_highlightedRows) {
-        QTreeWidgetItem *item = m_nalList->topLevelItem(row);
-        if (!item) continue;
-        const QColor origColor = item->data(0, Qt::UserRole + 1).value<QColor>();
-        for (int c = 0; c < item->columnCount(); c++) {
-            if (origColor.isValid())
-                item->setBackground(c, origColor);
-            else
-                item->setBackground(c, QBrush());
-        }
-    }
-    m_highlightedRows.clear();
+    m_nalModel->setHighlightedFrame(frameIdx);
+    if (frameIdx < 0) return;
 
-    QTreeWidgetItem *firstMatch = nullptr;
-    if (frameIdx >= 0) {
-        auto it = m_frameRows.find(frameIdx);
-        if (it != m_frameRows.end()) {
-            for (int row : it->second) {
-                QTreeWidgetItem *item = m_nalList->topLevelItem(row);
-                if (!item) continue;
-                for (int c = 0; c < item->columnCount(); c++)
-                    item->setBackground(c, QColor(255, 165, 30));
-                m_highlightedRows.push_back(row);
-                if (!firstMatch) firstMatch = item;
-            }
-        }
-    }
-    if (!firstMatch) return;
-
-    // Scroll to the highlighted row only when it is off-screen, and defer it
-    // so it does not interfere with the click that selected the row.
-    const QRect itemRect = m_nalList->visualItemRect(firstMatch);
-    if (!m_nalList->viewport()->rect().intersects(itemRect)) {
-        QTreeWidgetItem *target = firstMatch;
-        QTimer::singleShot(0, this, [this, target]() {
-            if (m_nalList->indexOfTopLevelItem(target) >= 0)
-                m_nalList->scrollToItem(target, QAbstractItemView::PositionAtCenter);
+    const int row = m_nalModel->firstRowForFrame(frameIdx);
+    if (row < 0) return;
+    const QModelIndex idx = m_nalModel->index(row, 0);
+    if (!m_nalList->viewport()->rect().intersects(m_nalList->visualRect(idx))) {
+        QTimer::singleShot(0, this, [this, idx]() {
+            m_nalList->scrollTo(idx, QAbstractItemView::PositionAtCenter);
         });
     }
 }
@@ -631,7 +542,10 @@ void MainWindow::onPlayPause() {
 
     if (!m_isPlaying) {
         if (m_currentFrameIndex >= m_totalFrames - 1) showFrameAt(0);
-        m_playerTimer->start(playerIntervalMs());
+        m_hasPending = false;
+        m_clockStartPts = m_currentPts;
+        m_playClock.start();
+        m_playerTimer->start(m_playerDecoder.hasTimestamps() ? 5 : playerIntervalMs());
         m_playBtn->setText("Pause");
         m_isPlaying = true;
         if (m_audio) m_audio->play();
@@ -655,8 +569,11 @@ void MainWindow::onSpeedChanged(int index) {
     double speed = m_speedCombo->itemData(index).toDouble();
     if (speed <= 0.0) speed = 1.0;
     m_playbackSpeed = speed;
-    if (m_isPlaying)                       // apply the new speed while playing
-        m_playerTimer->start(playerIntervalMs());
+    if (m_isPlaying) {
+        m_clockStartPts = m_currentPts;
+        m_playClock.restart();
+        m_playerTimer->start(m_playerDecoder.hasTimestamps() ? 5 : playerIntervalMs());
+    }
 }
 
 void MainWindow::onStop() {
@@ -694,36 +611,58 @@ void MainWindow::onSeek(int value) {
 
 void MainWindow::onPlayerTick() {
     if (m_totalFrames <= 0) return;
-    if (m_currentFrameIndex + 1 >= m_totalFrames) {
-        m_playerTimer->stop();
-        m_isPlaying = false;
-        m_playBtn->setText("Play");
-        if (m_audio) m_audio->pause();
+
+    // Raw streams have no container timestamps: fall back to the fixed timer.
+    if (!m_playerDecoder.hasTimestamps()) {
+        if (m_currentFrameIndex + 1 >= m_totalFrames) {
+            stopPlayback();
+            return;
+        }
+        showFrameAt(m_currentFrameIndex + 1);
         return;
     }
-    showFrameAt(m_currentFrameIndex + 1);
+
+    if (!m_hasPending) {
+        if (!m_playerDecoder.decodeNextFrame(m_pendingFrame)) {
+            stopPlayback();
+            return;
+        }
+        m_hasPending = true;
+    }
+
+    const double now = m_clockStartPts +
+                       (m_playClock.elapsed() / 1000.0) * m_playbackSpeed;
+    if (m_pendingFrame.ptsSec <= now) {
+        const DecodedFrame frame = m_pendingFrame;
+        m_hasPending = false;
+        m_currentFrameIndex++;
+        m_currentPts = frame.ptsSec;
+        showFrame(frame.image, m_currentFrameIndex);
+        if (m_currentFrameIndex >= m_totalFrames - 1) {
+            stopPlayback();
+        }
+    }
 }
 
-void MainWindow::onNALSelected(QTreeWidgetItem *current, QTreeWidgetItem *previous) {
-    Q_UNUSED(previous);
-    if (!current) return;
+void MainWindow::stopPlayback() {
+    m_playerTimer->stop();
+    m_isPlaying = false;
+    m_playBtn->setText("Play");
+    if (m_audio) m_audio->pause();
+}
 
-    int idx = m_nalList->indexOfTopLevelItem(current);
+void MainWindow::onNALSelected(int idx) {
     if (idx < 0) return;
 
     const auto &nals = m_parser.nalUnits();
     if ((size_t)idx >= nals.size()) return;
 
-    NALAnalysis analysis = m_analyzer.analyzeOne(nals[idx], m_parser.nalData(nals[idx]));
+    NALAnalysis analysis = m_analyzer.analyzeOne(nals[(size_t)idx], m_parser.nalData(nals[(size_t)idx]));
     m_details->setPlainText(QString::fromStdString(analysis.details));
 
-    const int fIdx = nals[idx].frameIndex;
+    const int fIdx = nals[(size_t)idx].frameIndex;
     if (fIdx >= 0 && fIdx < m_totalFrames) {
-        if (m_isPlaying) {
-            m_playerTimer->stop();
-            m_isPlaying = false;
-            m_playBtn->setText("Play");
-        }
+        if (m_isPlaying) stopPlayback();
         showFrameAt(fIdx);
     }
 }

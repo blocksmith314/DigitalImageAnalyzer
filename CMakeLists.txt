@@ -22,6 +22,8 @@ qt_add_executable(DigitalImageAnalyzer
     main.cpp
     mainwindow.h
     mainwindow.cpp
+    nallistmodel.h
+    nallistmodel.cpp
 
     core/nalunit.h
     core/expgolomb.h

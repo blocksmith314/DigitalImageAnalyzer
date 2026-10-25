@@ -7,6 +7,7 @@
 
 struct DecodedFrame {
     int64_t pts = 0;
+    double ptsSec = 0.0;   // presentation time in seconds
     int width = 0;
     int height = 0;
     QImage image;
@@ -30,6 +31,7 @@ public:
     std::unordered_map<int64_t, int> buildPktPosToDisplayIndexMap();
     std::unordered_map<int64_t, int> buildPosToDisplayIndexMapFromNals(const std::vector<NALUnit> &nals);
 
+    bool hasTimestamps() const;
     int frameCount() const { return m_frameCount; }
     int width() const { return m_width; }
     int height() const { return m_height; }
