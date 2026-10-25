@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=Digital Image Analyzer
+Name=DigitalImageAnalyzer
 Comment=H.264/H.265 bitstream analyzer
 Exec=DigitalImageAnalyzer
 Icon=digitalimageanalyzer

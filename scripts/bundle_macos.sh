@@ -10,8 +10,12 @@ FW="$APP/Contents/Frameworks"
 [ -x "$BIN" ] || { echo "missing $BIN" >&2; exit 1; }
 mkdir -p "$FW"
 
-if command -v macdeployqt >/dev/null 2>&1; then
-  macdeployqt "$APP" -always-overwrite >/dev/null 2>&1 || true
+MACDEPLOYQT="$(command -v macdeployqt 2>/dev/null || true)"
+if [ -z "$MACDEPLOYQT" ] && command -v brew >/dev/null 2>&1; then
+  MACDEPLOYQT="$(brew --prefix qt 2>/dev/null)/bin/macdeployqt"
+fi
+if [ -n "$MACDEPLOYQT" ] && [ -x "$MACDEPLOYQT" ]; then
+  "$MACDEPLOYQT" "$APP" -always-overwrite >/dev/null 2>&1 || true
 fi
 
 copy_deps() {

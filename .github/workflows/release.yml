@@ -35,7 +35,7 @@ jobs:
           path: DigitalImageAnalyzer-macos-arm64.zip
 
   macos-intel:
-    runs-on: macos-13
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
 
@@ -73,6 +73,7 @@ jobs:
           update: true
           install: >-
             mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-gcc
             mingw-w64-x86_64-ninja
             mingw-w64-x86_64-pkgconf
             mingw-w64-x86_64-qt6-base
@@ -129,7 +130,8 @@ jobs:
             --desktop-file packaging/linux/DigitalImageAnalyzer.desktop \
             --icon-file packaging/linux/digitalimageanalyzer.png \
             --plugin qt --output appimage
-          mv ./*.AppImage DigitalImageAnalyzer-linux-x64.AppImage
+          appimage="$(find . -maxdepth 1 -name '*.AppImage' -size +1M | head -1)"
+          mv "$appimage" DigitalImageAnalyzer-linux-x64.AppImage
 
       - uses: actions/upload-artifact@v4
         with:
