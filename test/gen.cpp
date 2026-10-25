@@ -10,6 +10,7 @@ extern "C" {
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <algorithm>
 
 static const uint8_t FONT5x7[][5] = {
     {0x00,0x00,0x00,0x00,0x00}, // ' '
@@ -143,6 +144,25 @@ static void fill_checkerboard(AVFrame *frame, int tile) {
         for (int x = 0; x < half_w; x++) {
             frame->data[1][y * ustride + x] = 128;
             frame->data[2][y * ustride + x] = 128;
+        }
+    }
+}
+
+static void fill_color_bars(AVFrame *frame) {
+    static const uint8_t kBar[8][3] = {
+        {235, 128, 128}, {210, 16, 146}, {170, 166, 16}, {145, 54, 34},
+        {106, 202, 222}, {81, 90, 240},  {41, 240, 110}, {16, 128, 128},
+    };
+    const int w = frame->width, h = frame->height;
+    const int ystride = frame->linesize[0];
+    const int ustride = frame->linesize[1];
+    for (int x = 0; x < w; x++) {
+        const int bar = x * 8 / w;
+        const uint8_t yv = kBar[bar][0], u = kBar[bar][1], v = kBar[bar][2];
+        for (int y = 0; y < h; y++) frame->data[0][y * ystride + x] = yv;
+        for (int y = 0; y < (h + 1) / 2; y++) {
+            frame->data[1][y * ustride + x / 2] = u;
+            frame->data[2][y * ustride + x / 2] = v;
         }
     }
 }
@@ -308,39 +328,50 @@ int main(int argc, char **argv) {
     int sine_cycles = 2;
 
     for (int f = 0; f < total_frames; f++) {
-        double t = (double)f / fps;
-        double progress = (double)f / (total_frames - 1);
+        const double progress = (total_frames > 1) ? (double)f / (total_frames - 1) : 0.0;
 
-        fill_checkerboard(frame, 16);
+        fill_color_bars(frame);
 
-        double box_x = start_x + (end_x - start_x) * progress;
-        double box_y = y_center + y_amplitude * sin(progress * 2.0 * M_PI * sine_cycles);
+        // Moving box that bounces across the frame.
+        const int box = std::max(24, width / 8);
+        const double travel = width - 2.0 * margin - box;
+        const double phase = 0.5 - 0.5 * cos(progress * 2.0 * M_PI * 3.0);
+        const int ix = (int)(margin + travel * phase);
+        const int iy = (int)(height * 0.55 - box / 2.0);
+        draw_filled_rect_yuv(frame, ix - 2, iy - 2, box + 4, box + 4, 16, 128, 128);
+        draw_filled_rect_yuv(frame, ix, iy, box, box, 235, 128, 128);
 
-        int ix = (int)box_x;
-        int iy = (int)box_y;
+        // Large frame number on a dark band so it stays readable on any bar.
+        char label[48];
+        snprintf(label, sizeof(label), "FRAME %d", f);
+        const int num_scale = std::max(2, width / 220);
+        const int num_w = (int)strlen(label) * 6 * num_scale;
+        draw_filled_rect_yuv(frame, 0, 0, width, num_scale * 7 + 14, 22, 128, 128);
+        draw_text_yuv(frame, label, (width - num_w) / 2, 8, 235, 128, 128, num_scale);
 
-        uint8_t frame_num = (uint8_t)(200 + (f * 13) % 40);
-        draw_filled_rect_yuv(frame, ix, iy, (int)box_w, (int)box_h,
-                             235, 80, 240);
+        // Timecode in the bottom-left corner (after the key-frame marker).
+        const int key_w = std::max(4, width / 160);
+        const int total_sec = f / fps;
+        const int sub = (f % fps) * 100 / (fps > 0 ? fps : 1);
+        char tc[32];
+        snprintf(tc, sizeof(tc), "%02d:%02d.%02d", total_sec / 60, total_sec % 60, sub);
+        draw_filled_rect_yuv(frame, key_w + 4, height - 32, 12 * (int)strlen(tc) + 8, 24, 22, 128, 128);
+        draw_text_yuv(frame, tc, key_w + 8, height - 28, 235, 128, 128, 2);
 
-        char pos[48];
-        snprintf(pos, sizeof(pos), "F=%d", f);
-        draw_text_yuv(frame, pos, 8, 8, 235, 128, 128, 2);
+        // Resolution / frame rate in the bottom-right corner.
+        char info[48];
+        snprintf(info, sizeof(info), "%dX%d %dFPS", width, height, fps);
+        const int info_w = 12 * (int)strlen(info);
+        draw_filled_rect_yuv(frame, width - info_w - 12, height - 32, info_w + 8, 24, 22, 128, 128);
+        draw_text_yuv(frame, info, width - info_w - 8, height - 28, 235, 128, 128, 2);
 
-        char label[32];
-        format_number(label, f, 4);
-        int label_scale = 2;
-        int label_w = 6 * 5 * label_scale;
-        draw_text_yuv(frame, label, width - label_w - 8, 8,
-                      235, 128, 128, label_scale);
-
-        snprintf(pos, sizeof(pos), "%dX%d %dFPS", width, height, fps);
-        draw_text_yuv(frame, pos, 8, height - 22, 235, 128, 128, 2);
-
-        char key_label[16];
+        // Progress bar along the bottom edge; key frames get a bright left bar.
+        const int bar_h = std::max(4, height / 60);
+        const int bar_y = height - bar_h;
+        draw_filled_rect_yuv(frame, 0, bar_y, width, bar_h, 40, 128, 128);
+        draw_filled_rect_yuv(frame, 0, bar_y, (int)(width * progress), bar_h, 200, 128, 128);
         if (f == 0 || f % keyint == 0) {
-            snprintf(key_label, sizeof(key_label), "KEY");
-            draw_text_yuv(frame, key_label, width - 50, height - 22, 235, 128, 128, 2);
+            draw_filled_rect_yuv(frame, 0, 0, key_w, height, 255, 128, 128);
         }
 
         frame->pts = f;
