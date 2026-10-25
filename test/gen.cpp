@@ -148,6 +148,93 @@ static void fill_checkerboard(AVFrame *frame, int tile) {
     }
 }
 
+static void yuv_from_rgb(double r, double g, double b, uint8_t &Y, uint8_t &U, uint8_t &V) {
+    const double y = 16.0 + 219.0 * (0.299 * r + 0.587 * g + 0.114 * b);
+    const double u = 128.0 + 224.0 * (0.5 * b - 0.168736 * r - 0.331264 * g);
+    const double v = 128.0 + 224.0 * (0.5 * r - 0.418688 * g - 0.081312 * b);
+    Y = (uint8_t)std::clamp(y, 0.0, 255.0);
+    U = (uint8_t)std::clamp(u, 0.0, 255.0);
+    V = (uint8_t)std::clamp(v, 0.0, 255.0);
+}
+
+static void palette_color(double t, double &r, double &g, double &b) {
+    static const double stops[6][3] = {
+        {0.02, 0.02, 0.12}, {0.05, 0.22, 0.62}, {0.08, 0.68, 0.92},
+        {0.55, 0.92, 0.75}, {1.00, 0.86, 0.35}, {1.00, 1.00, 1.00},
+    };
+    double x = fmod(t, 6.0);
+    if (x < 0) x += 6.0;
+    const int i = (int)x;
+    const double f = x - i;
+    const double *a = stops[i];
+    const double *b2 = stops[(i + 1) % 6];
+    r = a[0] * (1.0 - f) + b2[0] * f;
+    g = a[1] * (1.0 - f) + b2[1] * f;
+    b = a[2] * (1.0 - f) + b2[2] * f;
+}
+
+// Animated Mandelbrot zoom into "Seahorse Valley"; smooth cosine palette.
+static void render_mandelbrot(AVFrame *frame, int f, int total) {
+    const int w = frame->width, h = frame->height;
+    const int ystride = frame->linesize[0];
+    const int ustride = frame->linesize[1];
+    const double progress = (total > 1) ? (double)f / (total - 1) : 0.0;
+
+    // Start on the whole set, then fly into "Seahorse Valley".
+    const double targetX = -0.7436438870371587;
+    const double targetY = 0.1318259042053119;
+    const double p2 = progress * progress;
+    const double centerX = -0.5 + (targetX + 0.5) * p2;
+    const double centerY = 0.0 + targetY * p2;
+    const double zoom = exp(log(60.0) * p2);
+    const double scale = 1.25 / zoom;
+    const double angle = progress * 0.20;
+    const double ca = cos(angle), sa = sin(angle);
+    const double aspect = (double)w / (double)h;
+    const int maxIter = 220;
+
+    for (int y = 0; y < h; y++) {
+        const double py = ((y + 0.5) / h * 2.0 - 1.0) * scale;
+        for (int x = 0; x < w; x++) {
+            const double px = ((x + 0.5) / w * 2.0 - 1.0) * scale * aspect;
+            const double cr = centerX + px * ca - py * sa;
+            const double ci = centerY + px * sa + py * ca;
+
+            double zr = 0.0, zi = 0.0, zr2 = 0.0, zi2 = 0.0;
+            int i = 0;
+
+            // Main cardioid / period-2 bulb shortcut avoids most interior work.
+            const double q = (cr - 0.25) * (cr - 0.25) + ci * ci;
+            const bool interior = (q * (q + (cr - 0.25)) <= 0.25 * ci * ci) ||
+                                  ((cr + 1.0) * (cr + 1.0) + ci * ci <= 0.0625);
+            if (!interior) {
+                for (; i < maxIter && zr2 + zi2 <= 4.0; i++) {
+                    zi = 2.0 * zr * zi + ci;
+                    zr = zr2 - zi2 + cr;
+                    zr2 = zr * zr;
+                    zi2 = zi * zi;
+                }
+            }
+
+            double r = 0.02, g = 0.02, b = 0.05;   // near-black interior
+            if (i < maxIter && !interior) {
+                const double logZn = log(zr2 + zi2) * 0.5;
+                const double nu = log(logZn / log(2.0)) / log(2.0);
+                const double t = i + 1 - nu;
+                palette_color(t * 0.06, r, g, b);
+            }
+
+            uint8_t Y, U, V;
+            yuv_from_rgb(r, g, b, Y, U, V);
+            frame->data[0][y * ystride + x] = Y;
+            if ((x & 1) == 0 && (y & 1) == 0) {
+                frame->data[1][(y / 2) * ustride + x / 2] = U;
+                frame->data[2][(y / 2) * ustride + x / 2] = V;
+            }
+        }
+    }
+}
+
 static void fill_color_bars(AVFrame *frame) {
     static const uint8_t kBar[8][3] = {
         {235, 128, 128}, {210, 16, 146}, {170, 166, 16}, {145, 54, 34},
@@ -330,16 +417,7 @@ int main(int argc, char **argv) {
     for (int f = 0; f < total_frames; f++) {
         const double progress = (total_frames > 1) ? (double)f / (total_frames - 1) : 0.0;
 
-        fill_color_bars(frame);
-
-        // Moving box that bounces across the frame.
-        const int box = std::max(24, width / 8);
-        const double travel = width - 2.0 * margin - box;
-        const double phase = 0.5 - 0.5 * cos(progress * 2.0 * M_PI * 3.0);
-        const int ix = (int)(margin + travel * phase);
-        const int iy = (int)(height * 0.55 - box / 2.0);
-        draw_filled_rect_yuv(frame, ix - 2, iy - 2, box + 4, box + 4, 16, 128, 128);
-        draw_filled_rect_yuv(frame, ix, iy, box, box, 235, 128, 128);
+        render_mandelbrot(frame, f, total_frames);
 
         // Large frame number on a dark band so it stays readable on any bar.
         char label[48];
