@@ -7,6 +7,10 @@ and SEI messages, shows decode/display order side by side, and plays the video
 
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
 
+## Screenshot
+
+![Digital Image Analyzer main window](images/image_analyzer.png)
+
 ## Features
 
 - Opens raw Annex B streams (`.h264`, `.h265`, `.264`, `.265`, `.hevc`) and
