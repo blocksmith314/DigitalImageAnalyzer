@@ -9,7 +9,7 @@ and SEI messages, shows decode/display order side by side, and plays the video
 
 ## Screenshot
 
-![Digital Image Analyzer main window](images/image_analyzer.jpg)
+![Digital Image Analyzer main window](images/image_analyzer.png)
 
 ## Features
 
