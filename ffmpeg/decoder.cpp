@@ -22,6 +22,7 @@ struct FFmpegDecoder::Impl {
     bool hasPending = false;     // one frame decoded by seekByContainer
     DecodedFrame pending;
     int pendingIndex = 0;
+    AVFrame *lastFrame = nullptr;  // reference to the last decoded frame
 };
 
 FFmpegDecoder::FFmpegDecoder() : m_impl(new Impl()) {}
@@ -33,7 +34,7 @@ FFmpegDecoder::~FFmpegDecoder() {
 
 bool FFmpegDecoder::openFile(const std::string &path, CodecType codec) {
     close();
-    m_impl = new Impl();
+    if (m_impl) *m_impl = Impl();
 
     int codecId = (codec == CodecType::H264) ? AV_CODEC_ID_H264 : AV_CODEC_ID_HEVC;
 
@@ -131,6 +132,9 @@ void FFmpegDecoder::close() {
             av_free(m_impl->rgbBuffer);
             m_impl->rgbBuffer = nullptr;
         }
+        if (m_impl->lastFrame) {
+            av_frame_free(&m_impl->lastFrame);
+        }
         if (m_impl->codecCtx) {
             avcodec_free_context(&m_impl->codecCtx);
             m_impl->codecCtx = nullptr;
@@ -143,6 +147,31 @@ void FFmpegDecoder::close() {
 }
 
 bool FFmpegDecoder::decodeNextFrame(DecodedFrame &out) {
+    return decodeNextFrame(out, true);
+}
+
+bool FFmpegDecoder::convertFrame(const AVFrame *frame, DecodedFrame &out) {
+    if (!frame || !m_impl || !m_impl->codecCtx) return false;
+    if (!m_impl->swsCtx) {
+        m_impl->swsCtx = sws_getContext(
+            m_width, m_height, m_impl->codecCtx->pix_fmt,
+            m_width, m_height, AV_PIX_FMT_RGB24,
+            SWS_BILINEAR, nullptr, nullptr, nullptr);
+        if (!m_impl->swsCtx) return false;
+    }
+
+    uint8_t *dst[1] = {m_impl->rgbBuffer};
+    int dstLinesize[1] = {m_width * 3};
+    sws_scale(m_impl->swsCtx, frame->data, frame->linesize, 0, m_height, dst, dstLinesize);
+
+    QImage img(m_impl->rgbBuffer, m_width, m_height, QImage::Format_RGB888);
+    out.width = m_width;
+    out.height = m_height;
+    out.image = img.copy();
+    return true;
+}
+
+bool FFmpegDecoder::decodeNextFrame(DecodedFrame &out, bool convert) {
     if (!m_impl || !m_impl->codecCtx || !m_impl->fmtCtx) return false;
 
     if (m_impl->hasPending) {
@@ -168,18 +197,11 @@ bool FFmpegDecoder::decodeNextFrame(DecodedFrame &out) {
         }
 
         while (avcodec_receive_frame(m_impl->codecCtx, frame) >= 0) {
-            if (!m_impl->swsCtx) {
-                m_impl->swsCtx = sws_getContext(
-                    m_width, m_height, m_impl->codecCtx->pix_fmt,
-                    m_width, m_height, AV_PIX_FMT_RGB24,
-                    SWS_BILINEAR, nullptr, nullptr, nullptr);
-            }
-
-            uint8_t *dst[1] = {m_impl->rgbBuffer};
-            int dstLinesize[1] = {m_width * 3};
-            sws_scale(m_impl->swsCtx, frame->data, frame->linesize, 0, m_height, dst, dstLinesize);
-
-            QImage img(m_impl->rgbBuffer, m_width, m_height, QImage::Format_RGB888);
+            // Keep a reference to the frame so it can be converted on demand
+            // (seeking decodes many frames and only shows the last one).
+            if (!m_impl->lastFrame) m_impl->lastFrame = av_frame_alloc();
+            av_frame_unref(m_impl->lastFrame);
+            av_frame_ref(m_impl->lastFrame, frame);
 
             out.pts = frame->pts;
             out.ptsSec = (frame->pts != AV_NOPTS_VALUE)
@@ -187,7 +209,7 @@ bool FFmpegDecoder::decodeNextFrame(DecodedFrame &out) {
                              : 0.0;
             out.width = m_width;
             out.height = m_height;
-            out.image = img.copy();
+            if (convert) convertFrame(frame, out);
 
             m_frameCount++;
             m_currentFrame++;
@@ -271,7 +293,7 @@ bool FFmpegDecoder::seekToFrame(int targetIndex) {
     }
     DecodedFrame dummy;
     while (m_currentFrame < targetIndex) {
-        if (!decodeNextFrame(dummy)) return false;
+        if (!decodeNextFrame(dummy, false)) return false;
     }
     return true;
 }
@@ -297,9 +319,10 @@ bool FFmpegDecoder::seekByContainer(int targetIndex) {
     m_currentFrame = 0;
 
     DecodedFrame f;
-    while (decodeNextFrame(f)) {
+    while (decodeNextFrame(f, false)) {
         if (f.pts == AV_NOPTS_VALUE) return false;   // no container timestamps
         if (f.pts >= targetPts) {
+            convertFrame(m_impl->lastFrame, f);
             m_impl->pending = f;
             m_impl->pendingIndex = targetIndex;
             m_impl->hasPending = true;
@@ -310,78 +333,4 @@ bool FFmpegDecoder::seekByContainer(int targetIndex) {
     return false;
 }
 
-std::unordered_map<int64_t, int> FFmpegDecoder::buildPktPosToDisplayIndexMap() {
-    std::unordered_map<int64_t, int> result;
-    FILE *fp = fopen("/tmp/da_debug.txt", "w");
-    auto LOG = [&](const char *fmt, ...) {
-        if (!fp) return;
-        va_list ap; va_start(ap, fmt);
-        vfprintf(fp, fmt, ap);
-        va_end(ap);
-    };
-
-    if (!m_impl || !m_impl->codecCtx || !m_impl->fmtCtx) {
-        LOG("RETURN EMPTY: no impl\n");
-        if (fp) fclose(fp);
-        return result;
-    }
-
-    LOG("START buildPktPosToDisplayIndexMap\n");
-
-    avformat_seek_file(m_impl->fmtCtx, -1, INT64_MIN, 0, INT64_MAX, 0);
-    avcodec_flush_buffers(m_impl->codecCtx);
-
-    std::vector<std::pair<int64_t, int>> pktPosList;
-    int dtsIdx = 0;
-
-    AVPacket *pkt = av_packet_alloc();
-    while (av_read_frame(m_impl->fmtCtx, pkt) >= 0) {
-        if (pkt->stream_index == m_impl->videoStreamIdx) {
-            pktPosList.push_back({pkt->pos, dtsIdx});
-            pkt->pts = dtsIdx;
-            pkt->dts = dtsIdx;
-            LOG("PKT dtsIdx=%d pos=%lld pkt.pts=%lld size=%d\n",
-                    dtsIdx, (long long)pkt->pos, (long long)pkt->pts, pkt->size);
-            avcodec_send_packet(m_impl->codecCtx, pkt);
-            dtsIdx++;
-        }
-        av_packet_unref(pkt);
-    }
-    av_packet_free(&pkt);
-    avcodec_send_packet(m_impl->codecCtx, nullptr);
-
-    std::unordered_map<int64_t, int> ptsToDisplay;
-    AVFrame *frame = av_frame_alloc();
-    int displayIdx = 0;
-    while (avcodec_receive_frame(m_impl->codecCtx, frame) >= 0) {
-        ptsToDisplay[frame->pts] = displayIdx;
-        LOG("FRAME dispIdx=%d frame.pts=%lld pict_type=%d\n",
-                displayIdx, (long long)frame->pts, frame->pict_type);
-        displayIdx++;
-        av_frame_unref(frame);
-    }
-    LOG("TOTAL: displayIdx=%d pktCount=%zu ptsMapSize=%zu\n",
-            displayIdx, pktPosList.size(), ptsToDisplay.size());
-    av_frame_free(&frame);
-
-    for (auto &[pos, didx] : pktPosList) {
-        auto it = ptsToDisplay.find(didx);
-        if (it != ptsToDisplay.end()) {
-            result[pos] = it->second;
-        } else {
-            LOG("MISS: pos=%lld dtsIdx=%d not found in ptsMap\n",
-                    (long long)pos, didx);
-        }
-    }
-    LOG("RESULT map size=%zu\n", result.size());
-    for (auto &[pos, disp] : result) {
-        LOG("  pos=%lld -> displayIdx=%d\n", (long long)pos, disp);
-    }
-
-    avformat_seek_file(m_impl->fmtCtx, -1, INT64_MIN, 0, INT64_MAX, 0);
-    avcodec_flush_buffers(m_impl->codecCtx);
-
-    if (fp) fclose(fp);
-    return result;
-}
 

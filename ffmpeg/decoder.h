@@ -5,6 +5,8 @@
 #include <vector>
 #include <unordered_map>
 
+struct AVFrame;
+
 struct DecodedFrame {
     int64_t pts = 0;
     double ptsSec = 0.0;   // presentation time in seconds
@@ -23,13 +25,12 @@ public:
 
     void reset();
     bool decodeNextFrame(DecodedFrame &out);
+    // convert == false only decodes timestamps (used while seeking).
+    bool decodeNextFrame(DecodedFrame &out, bool convert);
     bool seekToFrame(int targetIndex);
     bool seekByContainer(int targetIndex);
 
     bool decodeKeyframes(std::vector<DecodedFrame> &out, int maxFrames = 10);
-
-    std::unordered_map<int64_t, int> buildPktPosToDisplayIndexMap();
-    std::unordered_map<int64_t, int> buildPosToDisplayIndexMapFromNals(const std::vector<NALUnit> &nals);
 
     bool hasTimestamps() const;
     int frameCount() const { return m_frameCount; }
@@ -40,6 +41,8 @@ public:
     const std::string &lastError() const { return m_error; }
 
 private:
+    bool convertFrame(const AVFrame *frame, DecodedFrame &out);
+
     struct Impl;
     Impl *m_impl = nullptr;
     int m_frameCount = 0;
