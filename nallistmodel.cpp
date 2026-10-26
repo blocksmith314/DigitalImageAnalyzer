@@ -72,7 +72,7 @@ int NalListModel::rowCount(const QModelIndex &parent) const {
 }
 
 int NalListModel::columnCount(const QModelIndex &parent) const {
-    return parent.isValid() ? 0 : 9;
+    return parent.isValid() ? 0 : 8;
 }
 
 QVariant NalListModel::data(const QModelIndex &index, int role) const {
