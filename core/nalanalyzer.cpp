@@ -43,7 +43,7 @@ bool NALAnalyzer::analyzeAll(BitstreamParser &parser,
                 case 7: {
                     H264SPS sps;
                     if (parseH264SPS(nal, data, sps)) {
-                        m_h264SpsMap[nal.nalType] = sps;
+                        m_h264SpsMap[sps.sps_id] = sps;
                         if (m_stats.width == 0) {
                             m_stats.width = sps.width;
                             m_stats.height = sps.height;
@@ -56,7 +56,7 @@ bool NALAnalyzer::analyzeAll(BitstreamParser &parser,
                 }
                 case 8: {
                     H264PPS pps;
-                    if (parseH264PPS(nal, data, pps)) m_h264PpsMap[nal.nalType] = pps;
+                    if (parseH264PPS(nal, data, pps)) m_h264PpsMap[pps.pps_id] = pps;
                     m_stats.ppsCount++;
                     break;
                 }
