@@ -1,5 +1,7 @@
+# Developer tools (not automated tests).
 # Test stream generator (requires FFmpeg encoders)
 add_executable(gen gen.cpp)
+set_target_properties(gen PROPERTIES FOLDER "tools")
 
 target_link_libraries(gen PRIVATE
     PkgConfig::AVFORMAT
@@ -24,6 +26,7 @@ target_include_directories(test_poc PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
 )
+set_target_properties(test_poc PROPERTIES FOLDER "tools")
 
 # Verifies NALAnalyzer frame grouping and PTS ordering
 add_executable(test_map test_map.cpp
@@ -34,6 +37,7 @@ target_include_directories(test_map PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
 )
+set_target_properties(test_map PROPERTIES FOLDER "tools")
 
 # No RUNTIME_OUTPUT_DIRECTORY: binaries go to the build tree (build/test/),
 # while test/ keeps sources and the committed test streams only.

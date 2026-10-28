@@ -79,8 +79,10 @@ set_target_properties(DigitalImageAnalyzer PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
-option(BUILD_TEST_GEN "Build H.264/H.265 test stream generator" ON)
-if(BUILD_TEST_GEN)
+# Developer tools: stream generator plus the POC / NAL-mapping debug programs.
+# These are not automated tests (see the gtest target below).
+option(BUILD_TOOLS "Build developer tools (gen, test_poc, test_map)" ON)
+if(BUILD_TOOLS)
     add_subdirectory(test)
 endif()
 
