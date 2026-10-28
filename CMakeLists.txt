@@ -119,6 +119,24 @@ if (BUILD_TOOLS)
     set_target_properties(frame_map PROPERTIES
         FOLDER "tools"
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test/tools)
+
+    # Multi-mode parser benchmark (developer tool, not registered as a test).
+    add_executable(bench_parse test/tools/bench_parse.cpp
+        ${TOOL_CORE_SOURCES}
+        ${CMAKE_SOURCE_DIR}/core/nalanalyzer.cpp
+        ${CMAKE_SOURCE_DIR}/ffmpeg/mp4index.cpp
+        ${CMAKE_SOURCE_DIR}/ffmpeg/avccparser.cpp)
+    target_include_directories(bench_parse PRIVATE
+        ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/core ${CMAKE_SOURCE_DIR}/ffmpeg)
+    set_target_properties(bench_parse PROPERTIES
+        FOLDER "tools"
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test/tools)
+    target_link_libraries(bench_parse PRIVATE
+        PkgConfig::AVFORMAT PkgConfig::AVCODEC PkgConfig::AVUTIL)
+    # Benchmarks are meaningless without optimisation; match the app's Debug.
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(bench_parse PRIVATE $<$<CONFIG:Debug>:-O2>)
+    endif ()
 endif()
 
 option(BUILD_TEST "Build unit tests" ON)
