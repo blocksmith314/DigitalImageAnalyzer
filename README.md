@@ -8,11 +8,41 @@
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#building)
 [![Latest release](https://img.shields.io/github/v/release/blocksmith314/DigitalImageAnalyzer)](https://github.com/blocksmith314/DigitalImageAnalyzer/releases)
 
-Digital Image Analyzer is a desktop tool for video engineers, students and
-anyone curious about what is inside a compressed video. It opens raw Annex B
-streams and MP4/MOV/MKV/TS containers, decodes every NAL unit, parameter set,
-slice header and SEI message, and pairs that structural view with
-frame-accurate playback.
+Digital Image Analyzer is a free, open-source **H.264/AVC and H.265/HEVC
+bitstream analyzer** for macOS, Linux and Windows. It opens raw Annex B
+elementary streams (`.h264`, `.h265`) and MP4/MOV/M4V/MKV/TS containers,
+parses every NAL unit, SPS/PPS/VPS parameter set, slice header and SEI
+message, and pairs that structural view with frame-accurate playback.
+
+In short: it is a **NAL unit analyzer, H.264/H.265 parameter-set
+(SPS/PPS/VPS) inspector, SEI decoder and MP4/MKV structure viewer** with a
+built-in player.
+
+## What is this tool for?
+
+- **Debug encoder output** from x264, x265 or FFmpeg: profile/level, GOP
+  structure, I/P/B distribution, bitrate and NAL sizes.
+- **Inspect NAL units** (type, offset, size) and see how a frame is split
+  into slices.
+- **Verify SPS/PPS/VPS fields**: resolution, chroma format, bit depth,
+  cropping, VUI timing and POC configuration.
+- **Read SEI messages**: encoder version/options, recovery points, HDR
+  mastering display and content light metadata.
+- **Check DTS/PTS order** to understand how B-frames are reordered.
+- **Analyse container files** (MP4/MOV/MKV/TS) without remuxing to Annex B.
+- **Play the stream frame by frame** to correlate bitstream structure with
+  the picture.
+
+## Who is it for?
+
+Video engineers, codec developers, QA engineers, students learning
+H.264/H.265, and anyone who needs to look inside a compressed video file.
+
+## Keywords
+
+H.264 analyzer · H.265 analyzer · HEVC analyzer · AVC bitstream analyzer ·
+NAL unit parser · SPS/PPS/VPS viewer · SEI decoder · MP4 analyzer · video
+bitstream inspector · DTS/PTS viewer · open-source video codec analyzer.
 
 The NAL table and the player are linked in both directions: scrub the timeline
 and the NAL units of the current frame are highlighted; click a NAL unit and
