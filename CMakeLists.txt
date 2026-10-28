@@ -79,9 +79,45 @@ set_target_properties(DigitalImageAnalyzer PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
-option(BUILD_TEST_GEN "Build H.264/H.265 test stream generator" ON)
-if(BUILD_TEST_GEN)
-    add_subdirectory(test)
+# ========= Developer tools =========
+# Manual debug helpers; these are not part of the automated tests below.
+option(BUILD_TOOLS "Build developer tools (gen, slice_header_dump, frame_map)" ON)
+if (BUILD_TOOLS)
+    add_executable(gen test/tools/gen.cpp)
+    set_target_properties(gen PROPERTIES
+        FOLDER "tools"
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test/tools)
+    target_link_libraries(gen PRIVATE
+        PkgConfig::AVFORMAT
+        PkgConfig::AVCODEC
+        PkgConfig::AVUTIL
+        m
+    )
+
+    set(TOOL_CORE_SOURCES
+        ${CMAKE_SOURCE_DIR}/core/bitstreamparser.cpp
+        ${CMAKE_SOURCE_DIR}/core/platformfile.cpp
+        ${CMAKE_SOURCE_DIR}/core/expgolomb.cpp
+        ${CMAKE_SOURCE_DIR}/core/h264types.cpp
+        ${CMAKE_SOURCE_DIR}/core/h265types.cpp
+        ${CMAKE_SOURCE_DIR}/core/seiparser.cpp
+    )
+
+    add_executable(slice_header_dump test/tools/slice_header_dump.cpp ${TOOL_CORE_SOURCES})
+    target_include_directories(slice_header_dump PRIVATE
+        ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/core)
+    set_target_properties(slice_header_dump PROPERTIES
+        FOLDER "tools"
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test/tools)
+
+    add_executable(frame_map test/tools/frame_map.cpp
+        ${TOOL_CORE_SOURCES}
+        ${CMAKE_SOURCE_DIR}/core/nalanalyzer.cpp)
+    target_include_directories(frame_map PRIVATE
+        ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/core)
+    set_target_properties(frame_map PROPERTIES
+        FOLDER "tools"
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test/tools)
 endif()
 
 option(BUILD_TEST "Build unit tests" ON)
@@ -116,13 +152,34 @@ if (BUILD_TEST)
 
     include(GoogleTest)
 
+    set(DIA_CORE_SOURCES
+            core/bitstreamparser.cpp
+            core/platformfile.cpp
+            core/expgolomb.cpp
+            core/h264types.cpp
+            core/h265types.cpp
+            core/seiparser.cpp
+            core/nalanalyzer.cpp
+    )
+
     set(TEST_SOURCES
-            test/test_h264.cpp
+            test/test_expgolomb.cpp
+            test/test_h264_params.cpp
+            test/test_h265_params.cpp
+            test/test_nals.cpp
+            test/test_parser.cpp
+            test/test_platform_file.cpp
+            test/test_sei.cpp
     )
 
     foreach (TEST_SOURCE ${TEST_SOURCES})
         get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
-        add_executable(${TEST_NAME} ${TEST_SOURCE})
+        add_executable(${TEST_NAME} ${TEST_SOURCE} ${DIA_CORE_SOURCES})
+        target_include_directories(${TEST_NAME} PRIVATE
+                ${CMAKE_SOURCE_DIR}
+                ${CMAKE_SOURCE_DIR}/core)
+        target_compile_definitions(${TEST_NAME} PRIVATE
+                TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/test/data")
         set(BASE_TEST_LIBS
                 gmock
                 gtest_main

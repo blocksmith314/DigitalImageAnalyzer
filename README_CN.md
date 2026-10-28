@@ -100,13 +100,13 @@ cmake --build build
 
 ```sh
 # 生成合成裸流（宽 高 帧率 帧数 keyint 编码器 输出文件）
-./build/test/gen 1280 720 30 120 30 libx264 /tmp/test.h264
+./build/test/tools/gen 1280 720 30 120 30 libx264 /tmp/test.h264
 
 # 打印随附样例的 H.264 切片头（frame_num / POC）
-./build/test/test_poc
+./build/test/tools/slice_header_dump
 
 # 校验 NAL 分组与 PTS 顺序
-./build/test/test_map test/output.h264
+./build/test/tools/frame_map test/data/output.h264
 ```
 
 ## 使用

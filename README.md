@@ -115,13 +115,13 @@ The build also produces small utilities under `build/test/`:
 
 ```sh
 # generate a synthetic raw stream (width height fps frames keyint codec output)
-./build/test/gen 1280 720 30 120 30 libx264 /tmp/test.h264
+./build/test/tools/gen 1280 720 30 120 30 libx264 /tmp/test.h264
 
 # print H.264 slice headers (frame_num / POC) for the bundled sample
-./build/test/test_poc
+./build/test/tools/slice_header_dump
 
 # verify NAL grouping and PTS ordering
-./build/test/test_map test/output.h264
+./build/test/tools/frame_map test/data/output.h264
 ```
 
 ## Usage
