@@ -48,6 +48,7 @@ qt_add_executable(DigitalImageAnalyzer
     ffmpeg/avccparser.cpp
     ffmpeg/audio.h
     ffmpeg/audio.cpp
+    ffmpeg/audiodecoder.cpp
     ffmpeg/mp4index.cpp
 )
 
@@ -196,4 +197,47 @@ if (BUILD_TEST)
         gtest_discover_tests(${TEST_NAME})
         add_dependencies(all_tests ${TEST_NAME})
     endforeach ()
+
+    # FFmpeg-dependent tests: probe + AVCC parsing (layer 2).
+    add_executable(test_ffmpeg_probe test/test_ffmpeg_probe.cpp
+        ${DIA_CORE_SOURCES}
+        ffmpeg/annexb.cpp
+        ffmpeg/avccparser.cpp)
+    target_include_directories(test_ffmpeg_probe PRIVATE
+        ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/core ${CMAKE_SOURCE_DIR}/ffmpeg)
+    target_compile_definitions(test_ffmpeg_probe PRIVATE
+        TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/test/data")
+    target_link_libraries(test_ffmpeg_probe PRIVATE
+        gmock gtest_main test_warning_fix
+        PkgConfig::AVFORMAT PkgConfig::AVCODEC PkgConfig::AVUTIL)
+    gtest_discover_tests(test_ffmpeg_probe)
+    add_dependencies(all_tests test_ffmpeg_probe)
+
+    # Frame decoder (layer 3): needs QtGui for QImage.
+    add_executable(test_decoder test/test_decoder.cpp
+        ${DIA_CORE_SOURCES}
+        ffmpeg/decoder.cpp)
+    target_include_directories(test_decoder PRIVATE
+        ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/core ${CMAKE_SOURCE_DIR}/ffmpeg)
+    target_compile_definitions(test_decoder PRIVATE
+        TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/test/data")
+    target_link_libraries(test_decoder PRIVATE
+        gmock gtest_main test_warning_fix
+        Qt6::Gui
+        PkgConfig::AVFORMAT PkgConfig::AVCODEC PkgConfig::AVUTIL PkgConfig::SWSCALE)
+    gtest_discover_tests(test_decoder)
+    add_dependencies(all_tests test_decoder)
+
+    # Audio decoding (layer 4): no Qt Multimedia, so it runs headless.
+    add_executable(test_audio_decoder test/test_audio_decoder.cpp
+        ffmpeg/audiodecoder.cpp)
+    target_include_directories(test_audio_decoder PRIVATE
+        ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/ffmpeg)
+    target_compile_definitions(test_audio_decoder PRIVATE
+        TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/test/data")
+    target_link_libraries(test_audio_decoder PRIVATE
+        gmock gtest_main test_warning_fix
+        PkgConfig::AVFORMAT PkgConfig::AVCODEC PkgConfig::AVUTIL PkgConfig::SWRESAMPLE)
+    gtest_discover_tests(test_audio_decoder)
+    add_dependencies(all_tests test_audio_decoder)
 endif ()
