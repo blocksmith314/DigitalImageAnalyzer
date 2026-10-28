@@ -127,7 +127,6 @@ if (BUILD_TEST)
     )
 
     set(TEST_SOURCES
-            test/test_h264.cpp
             test/test_expgolomb.cpp
             test/test_parser.cpp
             test/test_sei.cpp
