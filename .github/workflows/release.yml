@@ -18,7 +18,7 @@ jobs:
         run: brew install cmake ninja qt ffmpeg pkg-config
 
       - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TEST=OFF -DCMAKE_PREFIX_PATH="$(brew --prefix)"
 
       - name: Build
         run: cmake --build build
@@ -43,7 +43,7 @@ jobs:
         run: brew install cmake ninja qt ffmpeg pkg-config
 
       - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TEST=OFF -DCMAKE_PREFIX_PATH="$(brew --prefix)"
 
       - name: Build
         run: cmake --build build
@@ -82,7 +82,7 @@ jobs:
             zip
 
       - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/mingw64
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TEST=OFF -DCMAKE_PREFIX_PATH=/mingw64
 
       - name: Build
         run: cmake --build build
@@ -113,7 +113,7 @@ jobs:
             libswscale-dev libswresample-dev
 
       - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TEST=OFF
 
       - name: Build
         run: cmake --build build

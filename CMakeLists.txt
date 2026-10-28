@@ -83,3 +83,58 @@ option(BUILD_TEST_GEN "Build H.264/H.265 test stream generator" ON)
 if(BUILD_TEST_GEN)
     add_subdirectory(test)
 endif()
+
+option(BUILD_TEST "Build unit tests" ON)
+
+# ========= Unit Tests =========
+if (BUILD_TEST)
+    include(FetchContent)
+    add_custom_target(all_tests)
+    enable_testing()
+    message(STATUS "BUILD_TEST enabled")
+
+    add_library(test_warning_fix INTERFACE)
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(test_warning_fix INTERFACE "-Wno-maybe-uninitialized")
+    endif ()
+
+    set(GTEST_SOURCE_DIR "${PROJECT_SOURCE_DIR}/third_party/googletest")
+    if (EXISTS "${GTEST_SOURCE_DIR}/CMakeLists.txt")
+        message(STATUS "[TEST] Use local googletest at third_party/googletest")
+        add_subdirectory(${GTEST_SOURCE_DIR} EXCLUDE_FROM_ALL)
+    else ()
+        message(STATUS "[TEST] Fetch googletest from GitHub")
+        FetchContent_Declare(
+                googletest
+                GIT_REPOSITORY https://github.com/google/googletest.git
+                GIT_TAG v1.15.2
+                SOURCE_DIR "${GTEST_SOURCE_DIR}"
+        )
+        set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+        FetchContent_MakeAvailable(googletest)
+    endif ()
+
+    include(GoogleTest)
+
+    set(TEST_SOURCES
+            test/test_h264.cpp
+    )
+
+    foreach (TEST_SOURCE ${TEST_SOURCES})
+        get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
+        add_executable(${TEST_NAME} ${TEST_SOURCE})
+        set(BASE_TEST_LIBS
+                gmock
+                gtest_main
+        )
+        target_link_libraries(${TEST_NAME}
+                PRIVATE
+                ${BASE_TEST_LIBS}
+                test_warning_fix
+        )
+        set_target_properties(${TEST_NAME} PROPERTIES FOLDER "tests")
+
+        gtest_discover_tests(${TEST_NAME})
+        add_dependencies(all_tests ${TEST_NAME})
+    endforeach ()
+endif ()

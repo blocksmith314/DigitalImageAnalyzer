@@ -88,3 +88,6 @@ trace.txt
 dist/
 *.zip
 
+
+# vendored third-party sources (fetched on demand)
+third_party/
