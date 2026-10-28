@@ -116,13 +116,31 @@ if (BUILD_TEST)
 
     include(GoogleTest)
 
+    set(DIA_CORE_SOURCES
+            core/bitstreamparser.cpp
+            core/platformfile.cpp
+            core/expgolomb.cpp
+            core/h264types.cpp
+            core/h265types.cpp
+            core/seiparser.cpp
+            core/nalanalyzer.cpp
+    )
+
     set(TEST_SOURCES
             test/test_h264.cpp
+            test/test_expgolomb.cpp
+            test/test_parser.cpp
+            test/test_sei.cpp
     )
 
     foreach (TEST_SOURCE ${TEST_SOURCES})
         get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
-        add_executable(${TEST_NAME} ${TEST_SOURCE})
+        add_executable(${TEST_NAME} ${TEST_SOURCE} ${DIA_CORE_SOURCES})
+        target_include_directories(${TEST_NAME} PRIVATE
+                ${CMAKE_SOURCE_DIR}
+                ${CMAKE_SOURCE_DIR}/core)
+        target_compile_definitions(${TEST_NAME} PRIVATE
+                TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/test")
         set(BASE_TEST_LIBS
                 gmock
                 gtest_main
