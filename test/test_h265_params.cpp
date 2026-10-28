@@ -50,3 +50,18 @@ TEST(H265ParamsTest, ParsesPps) {
     EXPECT_EQ(pps.pps_id, 0u);
     EXPECT_EQ(pps.sps_id, 0u);
 }
+
+
+TEST(H265ParamsTest, NamesIrapSlices) {
+    if (!sampleExists()) GTEST_SKIP() << "sample stream missing";
+
+    BitstreamParser parser(CodecType::H265);
+    ASSERT_TRUE(parser.parseFile(samplePath())) << parser.lastError();
+
+    const NALUnit *idr = firstOfType(parser.nalUnits(), 20);
+    const NALUnit *cra = firstOfType(parser.nalUnits(), 21);
+    ASSERT_NE(idr, nullptr);
+    ASSERT_NE(cra, nullptr);
+    EXPECT_EQ(idr->typeName(), "IDR_N_LP");
+    EXPECT_EQ(cra->typeName(), "CRA_NUT");
+}

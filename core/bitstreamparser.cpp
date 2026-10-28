@@ -61,24 +61,47 @@ static int64_t findStartCode(const uint8_t *data, size_t len, size_t pos, uint8_
 }
 
 CodecType BitstreamParser::detectCodec(const uint8_t *data, size_t len) {
-    for (size_t i = 0; i + 4 < len; i++) {
-        if (data[i] == 0x00 && data[i + 1] == 0x00) {
-            uint8_t nalType = 0;
-            if (data[i + 2] == 0x01) {
-                nalType = data[i + 3] & 0x1F;
-            } else if (data[i + 2] == 0x00 && data[i + 3] == 0x01 && i + 4 < len) {
-                nalType = data[i + 4] & 0x1F;
-            } else {
-                continue;
-            }
-            if (nalType <= 30) return CodecType::H264;
-            uint8_t h265Type = (data[i + 3] >> 1) & 0x3F;
-            if (h265Type <= 51) return CodecType::H265;
+    // Look at several NAL headers and score both interpretations. A single
+    // header is not enough: an HEVC VPS header (0x40) also looks like an
+    // H.264 NAL type 0.
+    int h264Score = 0;
+    int h265Score = 0;
+    int inspected = 0;
+    size_t lastHeader = SIZE_MAX;
+
+    for (size_t i = 0; i + 3 < len && inspected < 16; i++) {
+        size_t header = SIZE_MAX;
+        if (data[i] == 0x00 && data[i + 1] == 0x00 && data[i + 2] == 0x01) {
+            header = i + 3;
+        } else if (i + 4 < len && data[i] == 0x00 && data[i + 1] == 0x00 &&
+                   data[i + 2] == 0x00 && data[i + 3] == 0x01) {
+            header = i + 4;
         }
+        if (header == SIZE_MAX || header >= len || header == lastHeader) continue;
+        lastHeader = header;
+
+        const uint8_t byte = data[header];
+        if (byte & 0x80) continue;  // forbidden_zero_bit must be zero
+
+        const uint8_t h264Type = byte & 0x1F;
+        const uint8_t h265Type = (byte >> 1) & 0x3F;
+
+        // Parameter sets, SEI and AUD are strong evidence for HEVC.
+        if (h265Type == 32 || h265Type == 33 || h265Type == 34 ||
+            h265Type == 35 || h265Type == 39 || h265Type == 40) {
+            h265Score++;
+        }
+        // Slice types, SEI, SPS/PPS/AUD are strong evidence for H.264.
+        if (h264Type == 1 || h264Type == 5 || h264Type == 6 ||
+            h264Type == 7 || h264Type == 8 || h264Type == 9) {
+            h264Score++;
+        }
+        inspected++;
     }
+
+    if (h265Score > h264Score) return CodecType::H265;
     return CodecType::H264;
 }
-
 bool BitstreamParser::parseFile(const std::string &path, const ProgressFn &progress) {
     resetStorage();
     m_error.clear();
@@ -184,16 +207,20 @@ static const char *h264_nal_names[] = {
 };
 
 static const char *h265_nal_names[] = {
-    "TRAIL_N", "TRAIL_R", "TRAILSA_N", "TRAILSA_R", "RADL_N",
-    "RADL_R", "BLA_W_LP", "BLA_W_RADL", "BLA_N_LP", "IDR_W_RADL",
-    "IDR_N_LP", "CRA_NUT", "RSV_VCL_N12", "RSV_VCL_N13", "RSV_VCL_N14",
-    "RSV_VCL_N15", "RSV_VCL_R16", "RSV_VCL_R17", "RSV_VCL_R18", "RSV_VCL_R19",
-    "RSV_VCL_R20", "RSV_VCL_R21", "RSV_VCL_R22", "RSV_VCL_R23", "RSV_VCL_R24",
-    "RSV_VCL_R25", "RSV_VCL_R26", "RSV_VCL_R27", "RSV_VCL_R28", "RSV_VCL_R29",
-    "RSV_VCL_R30", "RSV_VCL_R31", "VPS", "SPS", "PPS",
-    "AUD", "EOS_NUT", "EOB_NUT", "PREFIX_SEI", "SUFFIX_SEI",
-    "RSV_NVCL_40", "RSV_NVCL_41", "RSV_NVCL_42", "RSV_NVCL_43", "RSV_NVCL_44",
-    "RSV_NVCL_45", "RSV_NVCL_46", "RSV_NVCL_47", "UNSPECIFIED"
+    "TRAIL_N", "TRAIL_R", "TSA_N", "TSA_R", "STSA_N", "STSA_R",
+    "RADL_N", "RADL_R", "RASL_N", "RASL_R",
+    "RSV_VCL_N10", "RSV_VCL_N11", "RSV_VCL_N12", "RSV_VCL_N13",
+    "RSV_VCL_N14", "RSV_VCL_N15",
+    "BLA_W_LP", "BLA_W_RADL", "BLA_N_LP", "IDR_W_RADL", "IDR_N_LP",
+    "CRA_NUT",
+    "RSV_IRAP_VCL22", "RSV_IRAP_VCL23", "RSV_IRAP_VCL24",
+    "RSV_IRAP_VCL25", "RSV_IRAP_VCL26", "RSV_IRAP_VCL27",
+    "RSV_IRAP_VCL28", "RSV_IRAP_VCL29", "RSV_IRAP_VCL30",
+    "RSV_IRAP_VCL31",
+    "VPS", "SPS", "PPS", "AUD", "EOS_NUT", "EOB_NUT", "FD_NUT",
+    "PREFIX_SEI", "SUFFIX_SEI",
+    "RSV_NVCL41", "RSV_NVCL42", "RSV_NVCL43", "RSV_NVCL44",
+    "RSV_NVCL45", "RSV_NVCL46", "RSV_NVCL47",
 };
 
 std::string NALUnit::typeName() const {
@@ -201,7 +228,8 @@ std::string NALUnit::typeName() const {
         if (nalType <= 30) return h264_nal_names[nalType];
         return "RESERVED";
     }
-    if (nalType <= 40) return h265_nal_names[nalType];
+    constexpr size_t kH265NameCount = sizeof(h265_nal_names) / sizeof(h265_nal_names[0]);
+    if (nalType < kH265NameCount) return h265_nal_names[nalType];
     return "UNSPECIFIED";
 }
 
