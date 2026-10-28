@@ -106,7 +106,7 @@ cmake --build build
 ./build/test/tools/slice_header_dump
 
 # 校验 NAL 分组与 PTS 顺序
-./build/test/tools/frame_map test/output.h264
+./build/test/tools/frame_map test/data/output.h264
 ```
 
 ## 使用

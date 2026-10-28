@@ -121,7 +121,7 @@ The build also produces small utilities under `build/test/`:
 ./build/test/tools/slice_header_dump
 
 # verify NAL grouping and PTS ordering
-./build/test/tools/frame_map test/output.h264
+./build/test/tools/frame_map test/data/output.h264
 ```
 
 ## Usage
