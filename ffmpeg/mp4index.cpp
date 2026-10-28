@@ -187,7 +187,7 @@ bool BitstreamParser::parseMp4Indexed(const std::string &path, CodecType &codec,
         if (!findBox(data, stbl.offset + 8, stblEnd, 0x7374737Au, stszBox)) continue; // 'stsz'
         if (!findBox(data, stbl.offset + 8, stblEnd, 0x73747363u, stscBox)) continue; // 'stsc'
         foundVideo = findBox(data, stbl.offset + 8, stblEnd, 0x73747364u, stsdBox); // 'stsd'
-        if (!findBox(data, stbl.offset + 8, stblEnd, 0x7374736Fu, stcoBox)) {       // 'stco'
+        if (!findBox(data, stbl.offset + 8, stblEnd, 0x7374636Fu, stcoBox)) {       // 'stco'
             if (!findBox(data, stbl.offset + 8, stblEnd, 0x636F3634u, co64Box)) {   // 'co64'
                 foundVideo = false;
             }

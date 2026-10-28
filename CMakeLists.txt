@@ -160,12 +160,14 @@ if (BUILD_TEST)
             core/h265types.cpp
             core/seiparser.cpp
             core/nalanalyzer.cpp
+            ffmpeg/mp4index.cpp
     )
 
     set(TEST_SOURCES
             test/test_expgolomb.cpp
             test/test_h264_params.cpp
             test/test_h265_params.cpp
+            test/test_mp4index.cpp
             test/test_nals.cpp
             test/test_parser.cpp
             test/test_platform_file.cpp
