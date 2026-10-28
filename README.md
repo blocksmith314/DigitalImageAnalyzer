@@ -118,10 +118,10 @@ The build also produces small utilities under `build/test/`:
 ./build/test/tools/gen 1280 720 30 120 30 libx264 /tmp/test.h264
 
 # print H.264 slice headers (frame_num / POC) for the bundled sample
-./build/test/tools/test_poc
+./build/test/tools/slice_header_dump
 
 # verify NAL grouping and PTS ordering
-./build/test/tools/test_map test/output.h264
+./build/test/tools/frame_map test/output.h264
 ```
 
 ## Usage

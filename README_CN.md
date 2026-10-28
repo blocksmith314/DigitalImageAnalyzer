@@ -103,10 +103,10 @@ cmake --build build
 ./build/test/tools/gen 1280 720 30 120 30 libx264 /tmp/test.h264
 
 # 打印随附样例的 H.264 切片头（frame_num / POC）
-./build/test/tools/test_poc
+./build/test/tools/slice_header_dump
 
 # 校验 NAL 分组与 PTS 顺序
-./build/test/tools/test_map test/output.h264
+./build/test/tools/frame_map test/output.h264
 ```
 
 ## 使用
