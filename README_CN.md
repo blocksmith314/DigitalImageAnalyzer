@@ -8,7 +8,35 @@
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#构建)
 [![Latest release](https://img.shields.io/github/v/release/blocksmith314/DigitalImageAnalyzer)](https://github.com/blocksmith314/DigitalImageAnalyzer/releases)
 
-Digital Image Analyzer 是一款桌面工具，面向视频工程师、学生以及任何想了解压缩视频内部结构的人。它支持裸 Annex B 码流与 MP4/MOV/MKV/TS 容器，解析每个 NAL 单元、参数集、切片头和 SEI 消息，并将结构视图与逐帧播放结合起来。
+Digital Image Analyzer 是一款免费开源的 **H.264/AVC 与 H.265/HEVC 码流分析工具**，
+支持 macOS、Linux 和 Windows。它可以打开裸 Annex B 码流（`.h264`、`.h265`）
+以及 MP4/MOV/M4V/MKV/TS 容器，解析每个 NAL 单元、SPS/PPS/VPS 参数集、
+切片头和 SEI 消息，并将结构视图与逐帧播放结合起来。
+
+简单来说：它是一款 **NAL 单元分析器、H.264/H.265 参数集（SPS/PPS/VPS）
+查看器、SEI 解码器和 MP4/MKV 结构浏览器**，并内置播放器。
+
+## 这个工具能做什么？
+
+- **调试编码器输出**（x264、x265、FFmpeg）：查看 profile/level、GOP 结构、
+  I/P/B 分布、码率和 NAL 大小
+- **查看 NAL 单元**（类型、偏移、大小），了解一帧如何被拆成多个 slice
+- **核验 SPS/PPS/VPS 字段**：分辨率、色度格式、位深、裁剪、VUI 时序和 POC 配置
+- **读取 SEI 消息**：编码器版本/参数、恢复点、HDR 主显示与内容光级元数据
+- **检查 DTS/PTS 顺序**，理解 B 帧如何重排序
+- **分析容器文件**（MP4/MOV/MKV/TS），无需转成 Annex B
+- **逐帧播放**，把码流结构和画面直接对应起来
+
+## 适合谁用？
+
+视频工程师、编解码开发者、QA 工程师、学习 H.264/H.265 的学生，以及任何
+需要查看压缩视频内部结构的人。
+
+## 常见搜索词
+
+H.264 分析 · H.265 分析 · HEVC 分析 · AVC 码流分析 · NAL 单元解析 ·
+SPS/PPS/VPS 查看 · SEI 解码 · MP4 分析 · 视频码流分析工具 · DTS/PTS 查看 ·
+开源视频编码分析工具
 
 NAL 列表与播放器双向联动：拖动时间轴时，当前帧对应的 NAL 行会高亮；点击某个 NAL，播放器会跳转到包含它的帧。
 
