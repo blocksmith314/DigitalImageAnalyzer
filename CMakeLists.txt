@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia Test)
 
 qt_standard_project_setup()
 
@@ -240,4 +240,27 @@ if (BUILD_TEST)
         PkgConfig::AVFORMAT PkgConfig::AVCODEC PkgConfig::AVUTIL PkgConfig::SWRESAMPLE)
     gtest_discover_tests(test_audio_decoder)
     add_dependencies(all_tests test_audio_decoder)
+
+    # GUI tests: NalListModel plus MainWindow interaction, run offscreen.
+    add_executable(test_gui test/test_gui.cpp
+        mainwindow.cpp
+        nallistmodel.cpp
+        ${DIA_CORE_SOURCES}
+        ffmpeg/decoder.cpp
+        ffmpeg/annexb.cpp
+        ffmpeg/avccparser.cpp
+        ffmpeg/audio.cpp
+        ffmpeg/audiodecoder.cpp)
+    target_include_directories(test_gui PRIVATE
+        ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/core ${CMAKE_SOURCE_DIR}/ffmpeg)
+    target_compile_definitions(test_gui PRIVATE
+        TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/test/data")
+    target_link_libraries(test_gui PRIVATE
+        gtest test_warning_fix
+        Qt6::Widgets Qt6::Multimedia Qt6::Test
+        PkgConfig::AVFORMAT PkgConfig::AVCODEC PkgConfig::AVUTIL
+        PkgConfig::SWSCALE PkgConfig::SWRESAMPLE)
+    gtest_discover_tests(test_gui PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_dependencies(all_tests test_gui)
 endif ()

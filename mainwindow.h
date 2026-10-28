@@ -30,6 +30,9 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+    // Load a file programmatically (same path as File > Open).
+    bool loadFile(const QString &path);
+
 protected:
     void closeEvent(QCloseEvent *event) override;
 
@@ -57,7 +60,6 @@ private:
     void saveRecentFiles();
     void updateRecentMenu();
     void addRecentFile(const QString &path);
-    bool loadFile(const QString &path);
     void startPlayer();
     void showFrame(const QImage &image, int frameIdx);
     void showFrameAt(int idx);
