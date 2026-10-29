@@ -11,263 +11,234 @@ extern "C" {
 #include <libswresample/swresample.h>
 }
 
-namespace
-{
+namespace {
 
-    AVSampleFormat toAv(PcmFormat format)
-    {
-        switch (format)
-        {
-        case PcmFormat::U8:
-            return AV_SAMPLE_FMT_U8;
-        case PcmFormat::S16:
-            return AV_SAMPLE_FMT_S16;
-        case PcmFormat::S32:
-            return AV_SAMPLE_FMT_S32;
-        case PcmFormat::Float:
-            return AV_SAMPLE_FMT_FLT;
-        }
-        return AV_SAMPLE_FMT_S16;
-    }
+AVSampleFormat toAv(PcmFormat format) {
+  switch (format) {
+    case PcmFormat::kU8:
+      return AV_SAMPLE_FMT_U8;
+    case PcmFormat::kS16:
+      return AV_SAMPLE_FMT_S16;
+    case PcmFormat::kS32:
+      return AV_SAMPLE_FMT_S32;
+    case PcmFormat::kFloat:
+      return AV_SAMPLE_FMT_FLT;
+  }
+  return AV_SAMPLE_FMT_S16;
+}
 
-} // namespace
+}  // namespace
 
-struct AudioDecoder::Impl
-{
-    AVFormatContext* fmt = nullptr;
-    AVCodecContext* ctx = nullptr;
-    SwrContext* swr = nullptr;
-    AVPacket* pkt = nullptr;
-    AVFrame* frame = nullptr;
+struct AudioDecoder::Impl {
+  AVFormatContext* fmt = nullptr;
+  AVCodecContext* ctx = nullptr;
+  SwrContext* swr = nullptr;
+  AVPacket* pkt = nullptr;
+  AVFrame* frame = nullptr;
 
-    int streamIdx = -1;
-    int sourceRate = 0;
-    int sourceChannels = 0;
+  int stream_idx = -1;
+  int source_rate = 0;
+  int SourceChannels = 0;
 
-    int outRate = 48000;
-    int outChannels = 2;
-    AVSampleFormat outFormat = AV_SAMPLE_FMT_S16;
+  int out_rate = 48000;
+  int out_channels = 2;
+  AVSampleFormat outFormat = AV_SAMPLE_FMT_S16;
 
-    bool eof = false;
-    bool flushed = false;
+  bool eof = false;
+  bool flushed = false;
 
-    void initResampler();
+  void initResampler();
 };
 
-void AudioDecoder::Impl::initResampler()
-{
-    AVChannelLayout outLayout;
-    av_channel_layout_default(&outLayout, outChannels);
+void AudioDecoder::Impl::initResampler() {
+  AVChannelLayout outLayout;
+  av_channel_layout_default(&outLayout, out_channels);
 
-    AVChannelLayout inLayout = frame->ch_layout;
-    if (inLayout.nb_channels <= 0)
-        av_channel_layout_copy(&inLayout, &ctx->ch_layout);
-    const int inRate = frame->sample_rate > 0 ? frame->sample_rate : ctx->sample_rate;
-    const AVSampleFormat inFmt = frame->format >= 0 ? static_cast<AVSampleFormat>(frame->format) : ctx->sample_fmt;
+  AVChannelLayout inLayout = frame->ch_layout;
+  if (inLayout.nb_channels <= 0)
+    av_channel_layout_copy(&inLayout, &ctx->ch_layout);
+  const int in_rate =
+      frame->sample_rate > 0 ? frame->sample_rate : ctx->sample_rate;
+  const AVSampleFormat inFmt = frame->format >= 0
+                                   ? static_cast<AVSampleFormat>(frame->format)
+                                   : ctx->sample_fmt;
 
-    swr_alloc_set_opts2(&swr, &outLayout, outFormat, outRate, &inLayout, inFmt, inRate, 0, nullptr);
-    if (swr)
-        swr_init(swr);
+  swr_alloc_set_opts2(&swr, &outLayout, outFormat, out_rate, &inLayout, inFmt,
+                      in_rate, 0, nullptr);
+  if (swr) swr_init(swr);
 }
 
-AudioDecoder::AudioDecoder() : m_impl(new Impl()) {}
+AudioDecoder::AudioDecoder() : impl_(new Impl()) {}
 
-AudioDecoder::~AudioDecoder()
-{
+AudioDecoder::~AudioDecoder() {
+  close();
+  delete impl_;
+}
+
+bool AudioDecoder::open(const std::string& path) {
+  close();
+  if (!impl_) impl_ = new Impl();
+
+  if (avformat_open_input(&impl_->fmt, path.c_str(), nullptr, nullptr) < 0) {
     close();
-    delete m_impl;
-}
-
-bool AudioDecoder::open(const std::string& path)
-{
+    return false;
+  }
+  if (avformat_find_stream_info(impl_->fmt, nullptr) < 0) {
     close();
-    if (!m_impl)
-        m_impl = new Impl();
+    return false;
+  }
 
-    if (avformat_open_input(&m_impl->fmt, path.c_str(), nullptr, nullptr) < 0)
-    {
-        close();
-        return false;
+  impl_->stream_idx = -1;
+  for (unsigned i = 0; i < impl_->fmt->nb_streams; i++) {
+    if (impl_->fmt->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+      impl_->stream_idx = static_cast<int>(i);
+      break;
     }
-    if (avformat_find_stream_info(m_impl->fmt, nullptr) < 0)
-    {
-        close();
-        return false;
-    }
+  }
+  if (impl_->stream_idx < 0) {
+    close();
+    return false;
+  }
 
-    m_impl->streamIdx = -1;
-    for (unsigned i = 0; i < m_impl->fmt->nb_streams; i++)
-    {
-        if (m_impl->fmt->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
-        {
-            m_impl->streamIdx = static_cast<int>(i);
-            break;
-        }
-    }
-    if (m_impl->streamIdx < 0)
-    {
-        close();
-        return false;
-    }
+  AVCodecParameters* par = impl_->fmt->streams[impl_->stream_idx]->codecpar;
+  const AVCodec* decoder = avcodec_find_decoder(par->codec_id);
+  if (!decoder) {
+    close();
+    return false;
+  }
+  impl_->ctx = avcodec_alloc_context3(decoder);
+  if (!impl_->ctx || avcodec_parameters_to_context(impl_->ctx, par) < 0 ||
+      avcodec_open2(impl_->ctx, decoder, nullptr) < 0) {
+    close();
+    return false;
+  }
+  impl_->pkt = av_packet_alloc();
+  impl_->frame = av_frame_alloc();
+  if (!impl_->pkt || !impl_->frame) {
+    close();
+    return false;
+  }
 
-    AVCodecParameters* par = m_impl->fmt->streams[m_impl->streamIdx]->codecpar;
-    const AVCodec* decoder = avcodec_find_decoder(par->codec_id);
-    if (!decoder)
-    {
-        close();
-        return false;
-    }
-    m_impl->ctx = avcodec_alloc_context3(decoder);
-    if (!m_impl->ctx || avcodec_parameters_to_context(m_impl->ctx, par) < 0 ||
-        avcodec_open2(m_impl->ctx, decoder, nullptr) < 0)
-    {
-        close();
-        return false;
-    }
-    m_impl->pkt = av_packet_alloc();
-    m_impl->frame = av_frame_alloc();
-    if (!m_impl->pkt || !m_impl->frame)
-    {
-        close();
-        return false;
-    }
-
-    m_impl->sourceRate = m_impl->ctx->sample_rate;
-    m_impl->sourceChannels = m_impl->ctx->ch_layout.nb_channels;
-    m_impl->eof = false;
-    m_impl->flushed = false;
-    return true;
+  impl_->source_rate = impl_->ctx->sample_rate;
+  impl_->SourceChannels = impl_->ctx->ch_layout.nb_channels;
+  impl_->eof = false;
+  impl_->flushed = false;
+  return true;
 }
 
-void AudioDecoder::close()
-{
-    if (!m_impl)
-        return;
-    if (m_impl->swr)
-        swr_free(&m_impl->swr);
-    if (m_impl->frame)
-        av_frame_free(&m_impl->frame);
-    if (m_impl->pkt)
-        av_packet_free(&m_impl->pkt);
-    if (m_impl->ctx)
-        avcodec_free_context(&m_impl->ctx);
-    if (m_impl->fmt)
-        avformat_close_input(&m_impl->fmt);
-    *m_impl = Impl();
+void AudioDecoder::close() {
+  if (!impl_) return;
+  if (impl_->swr) swr_free(&impl_->swr);
+  if (impl_->frame) av_frame_free(&impl_->frame);
+  if (impl_->pkt) av_packet_free(&impl_->pkt);
+  if (impl_->ctx) avcodec_free_context(&impl_->ctx);
+  if (impl_->fmt) avformat_close_input(&impl_->fmt);
+  *impl_ = Impl();
 }
 
-bool AudioDecoder::isOpen() const { return m_impl && m_impl->ctx != nullptr; }
+bool AudioDecoder::IsOpen() const { return impl_ && impl_->ctx != nullptr; }
 
-bool AudioDecoder::hasAudio() const { return isOpen(); }
+bool AudioDecoder::HasAudio() const { return IsOpen(); }
 
-int AudioDecoder::sourceSampleRate() const { return m_impl ? m_impl->sourceRate : 0; }
-
-int AudioDecoder::sourceChannels() const { return m_impl ? m_impl->sourceChannels : 0; }
-
-void AudioDecoder::setOutputFormat(int sampleRate, int channels, PcmFormat format)
-{
-    if (!m_impl)
-        return;
-    m_impl->outRate = sampleRate > 0 ? sampleRate : 48000;
-    m_impl->outChannels = channels > 0 ? channels : 2;
-    m_impl->outFormat = toAv(format);
-    if (m_impl->swr)
-        swr_free(&m_impl->swr);
+int AudioDecoder::SourceSampleRate() const {
+  return impl_ ? impl_->source_rate : 0;
 }
 
-int AudioDecoder::outputSampleRate() const { return m_impl ? m_impl->outRate : 0; }
-
-int AudioDecoder::outputChannels() const { return m_impl ? m_impl->outChannels : 0; }
-
-void AudioDecoder::seekTo(double seconds)
-{
-    if (!isOpen())
-        return;
-    AVStream* stream = m_impl->fmt->streams[m_impl->streamIdx];
-    const int64_t timestamp = static_cast<int64_t>(seconds / av_q2d(stream->time_base));
-    if (av_seek_frame(m_impl->fmt, m_impl->streamIdx, timestamp, AVSEEK_FLAG_BACKWARD) < 0)
-    {
-        return;
-    }
-    avcodec_flush_buffers(m_impl->ctx);
-    if (m_impl->swr)
-        swr_convert(m_impl->swr, nullptr, 0, nullptr, 0);
-    m_impl->eof = false;
-    m_impl->flushed = false;
+int AudioDecoder::SourceChannels() const {
+  return impl_ ? impl_->SourceChannels : 0;
 }
 
+void AudioDecoder::SetOutputFormat(int sample_rate, int channels,
+                                     PcmFormat format) {
+  if (!impl_) return;
+  impl_->out_rate = sample_rate > 0 ? sample_rate : 48000;
+  impl_->out_channels = channels > 0 ? channels : 2;
+  impl_->outFormat = toAv(format);
+  if (impl_->swr) swr_free(&impl_->swr);
+}
 
-int AudioDecoder::decode(uint8_t* out, int maxBytes)
-{
-    if (!isOpen() || !out || maxBytes <= 0)
-        return 0;
+int AudioDecoder::OutputSampleRate() const {
+  return impl_ ? impl_->out_rate : 0;
+}
 
-    const int bytesPerFrame = m_impl->outChannels * av_get_bytes_per_sample(m_impl->outFormat);
-    if (bytesPerFrame <= 0)
-        return 0;
+int AudioDecoder::OutputChannels() const {
+  return impl_ ? impl_->out_channels : 0;
+}
 
-    int written = 0;
-    while (written + bytesPerFrame <= maxBytes)
-    {
-        // Drain samples buffered by the resampler first.
-        if (m_impl->swr)
-        {
-            const int buffered = swr_get_out_samples(m_impl->swr, 0);
-            if (buffered > 0)
-            {
-                const int maxFrames = (maxBytes - written) / bytesPerFrame;
-                uint8_t* dst = out + written;
-                const int converted = swr_convert(m_impl->swr, &dst, maxFrames, nullptr, 0);
-                if (converted <= 0)
-                    break;
-                written += converted * bytesPerFrame;
-                continue;
-            }
-        }
+void AudioDecoder::SeekTo(double seconds) {
+  if (!IsOpen()) return;
+  AVStream* stream = impl_->fmt->streams[impl_->stream_idx];
+  const int64_t timestamp =
+      static_cast<int64_t>(seconds / av_q2d(stream->time_base));
+  if (av_seek_frame(impl_->fmt, impl_->stream_idx, timestamp,
+                    AVSEEK_FLAG_BACKWARD) < 0) {
+    return;
+  }
+  avcodec_flush_buffers(impl_->ctx);
+  if (impl_->swr) swr_convert(impl_->swr, nullptr, 0, nullptr, 0);
+  impl_->eof = false;
+  impl_->flushed = false;
+}
 
-        const int ret = avcodec_receive_frame(m_impl->ctx, m_impl->frame);
-        if (ret == AVERROR(EAGAIN))
-        {
-            if (m_impl->eof)
-            {
-                if (!m_impl->flushed)
-                {
-                    avcodec_send_packet(m_impl->ctx, nullptr);
-                    m_impl->flushed = true;
-                    continue;
-                }
-                break;
-            }
-            if (av_read_frame(m_impl->fmt, m_impl->pkt) < 0)
-            {
-                m_impl->eof = true;
-                continue;
-            }
-            if (m_impl->pkt->stream_index != m_impl->streamIdx)
-            {
-                av_packet_unref(m_impl->pkt);
-                continue;
-            }
-            avcodec_send_packet(m_impl->ctx, m_impl->pkt);
-            av_packet_unref(m_impl->pkt);
-            continue;
-        }
-        if (ret < 0)
-            break;
+int AudioDecoder::decode(uint8_t* out, int max_bytes) {
+  if (!IsOpen() || !out || max_bytes <= 0) return 0;
 
-        if (!m_impl->swr)
-            m_impl->initResampler();
-        const int maxFrames = (maxBytes - written) / bytesPerFrame;
+  const int bytes_per_frame =
+      impl_->out_channels * av_get_bytes_per_sample(impl_->outFormat);
+  if (bytes_per_frame <= 0) return 0;
+
+  int written = 0;
+  while (written + bytes_per_frame <= max_bytes) {
+    // Drain samples buffered by the resampler first.
+    if (impl_->swr) {
+      const int buffered = swr_get_out_samples(impl_->swr, 0);
+      if (buffered > 0) {
+        const int max_frames = (max_bytes - written) / bytes_per_frame;
         uint8_t* dst = out + written;
         const int converted =
-            swr_convert(m_impl->swr, &dst, maxFrames, const_cast<const uint8_t**>(m_impl->frame->extended_data),
-                        m_impl->frame->nb_samples);
-        av_frame_unref(m_impl->frame);
-        if (converted <= 0)
-            break;
-        written += converted * bytesPerFrame;
+            swr_convert(impl_->swr, &dst, max_frames, nullptr, 0);
+        if (converted <= 0) break;
+        written += converted * bytes_per_frame;
+        continue;
+      }
     }
-    return written;
+
+    const int ret = avcodec_receive_frame(impl_->ctx, impl_->frame);
+    if (ret == AVERROR(EAGAIN)) {
+      if (impl_->eof) {
+        if (!impl_->flushed) {
+          avcodec_send_packet(impl_->ctx, nullptr);
+          impl_->flushed = true;
+          continue;
+        }
+        break;
+      }
+      if (av_read_frame(impl_->fmt, impl_->pkt) < 0) {
+        impl_->eof = true;
+        continue;
+      }
+      if (impl_->pkt->stream_index != impl_->stream_idx) {
+        av_packet_unref(impl_->pkt);
+        continue;
+      }
+      avcodec_send_packet(impl_->ctx, impl_->pkt);
+      av_packet_unref(impl_->pkt);
+      continue;
+    }
+    if (ret < 0) break;
+
+    if (!impl_->swr) impl_->initResampler();
+    const int max_frames = (max_bytes - written) / bytes_per_frame;
+    uint8_t* dst = out + written;
+    const int converted =
+        swr_convert(impl_->swr, &dst, max_frames,
+                    const_cast<const uint8_t**>(impl_->frame->extended_data),
+                    impl_->frame->nb_samples);
+    av_frame_unref(impl_->frame);
+    if (converted <= 0) break;
+    written += converted * bytes_per_frame;
+  }
+  return written;
 }
 
-bool AudioDecoder::atEnd() const { return m_impl && m_impl->eof; }
+bool AudioDecoder::AtEnd() const { return impl_ && impl_->eof; }

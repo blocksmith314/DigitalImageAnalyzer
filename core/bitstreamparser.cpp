@@ -4,232 +4,210 @@
 #include <cstdio>
 #include <cstring>
 
-BitstreamParser::BitstreamParser(CodecType codec) : m_codec(codec) {}
+BitstreamParser::BitstreamParser(CodecType codec) : codec_(codec) {}
 
-BitstreamParser::~BitstreamParser() { resetStorage(); }
+BitstreamParser::~BitstreamParser() { ResetStorage(); }
 
-BitstreamParser::BitstreamParser(BitstreamParser&& other) noexcept :
-    m_codec(other.m_codec), m_nals(std::move(other.m_nals)), m_error(std::move(other.m_error)),
-    m_buffer(std::move(other.m_buffer)), m_mapped(std::move(other.m_mapped)), m_base(other.m_base)
-{
-    other.m_base = nullptr;
+BitstreamParser::BitstreamParser(BitstreamParser&& other) noexcept
+    : codec_(other.codec_),
+      nals_(std::move(other.nals_)),
+      error_(std::move(other.error_)),
+      buffer_(std::move(other.buffer_)),
+      mapped_(std::move(other.mapped_)),
+      base_(other.base_) {
+  other.base_ = nullptr;
 }
 
-BitstreamParser& BitstreamParser::operator=(BitstreamParser&& other) noexcept
-{
-    if (this != &other)
-    {
-        resetStorage();
-        m_codec = other.m_codec;
-        m_nals = std::move(other.m_nals);
-        m_error = std::move(other.m_error);
-        m_buffer = std::move(other.m_buffer);
-        m_mapped = std::move(other.m_mapped);
-        m_base = other.m_base;
-        other.m_base = nullptr;
+BitstreamParser& BitstreamParser::operator=(BitstreamParser&& other) noexcept {
+  if (this != &other) {
+    ResetStorage();
+    codec_ = other.codec_;
+    nals_ = std::move(other.nals_);
+    error_ = std::move(other.error_);
+    buffer_ = std::move(other.buffer_);
+    mapped_ = std::move(other.mapped_);
+    base_ = other.base_;
+    other.base_ = nullptr;
+  }
+  return *this;
+}
+
+void BitstreamParser::ReleaseMappedPages() {
+  mapped_.ReleaseResidentPages();
+}
+
+void BitstreamParser::ResetStorage() {
+  mapped_.close();
+  base_ = nullptr;
+  buffer_.clear();
+  extra_.clear();
+  nals_.clear();
+}
+
+static int64_t find_start_code(const uint8_t* data, size_t len, size_t pos,
+                               uint8_t& sc_len) {
+  for (size_t i = pos; i + 3 < len; i++) {
+    if (data[i] == 0x00 && data[i + 1] == 0x00) {
+      if (data[i + 2] == 0x01) {
+        sc_len = 3;
+        return (int64_t)i;
+      }
+      if (i + 3 < len && data[i + 2] == 0x00 && data[i + 3] == 0x01) {
+        sc_len = 4;
+        return (int64_t)i;
+      }
     }
-    return *this;
+  }
+  return -1;
 }
 
-void BitstreamParser::releaseMappedPages() { m_mapped.releaseResidentPages(); }
+CodecType BitstreamParser::DetectCodec(const uint8_t* data, size_t len) {
+  // Look at several NAL headers and score both interpretations. A single
+  // header is not enough: an HEVC VPS header (0x40) also looks like an
+  // H.264 NAL type 0.
+  int h264_score = 0;
+  int h265_score = 0;
+  int inspected = 0;
+  size_t last_header = SIZE_MAX;
 
-void BitstreamParser::resetStorage()
-{
-    m_mapped.close();
-    m_base = nullptr;
-    m_buffer.clear();
-    m_extra.clear();
-    m_nals.clear();
-}
-
-static int64_t findStartCode(const uint8_t* data, size_t len, size_t pos, uint8_t& scLen)
-{
-    for (size_t i = pos; i + 3 < len; i++)
-    {
-        if (data[i] == 0x00 && data[i + 1] == 0x00)
-        {
-            if (data[i + 2] == 0x01)
-            {
-                scLen = 3;
-                return (int64_t)i;
-            }
-            if (i + 3 < len && data[i + 2] == 0x00 && data[i + 3] == 0x01)
-            {
-                scLen = 4;
-                return (int64_t)i;
-            }
-        }
+  for (size_t i = 0; i + 3 < len && inspected < 16; i++) {
+    size_t header = SIZE_MAX;
+    if (data[i] == 0x00 && data[i + 1] == 0x00 && data[i + 2] == 0x01) {
+      header = i + 3;
+    } else if (i + 4 < len && data[i] == 0x00 && data[i + 1] == 0x00 &&
+               data[i + 2] == 0x00 && data[i + 3] == 0x01) {
+      header = i + 4;
     }
-    return -1;
-}
+    if (header == SIZE_MAX || header >= len || header == last_header) continue;
+    last_header = header;
 
-CodecType BitstreamParser::detectCodec(const uint8_t* data, size_t len)
-{
-    // Look at several NAL headers and score both interpretations. A single
-    // header is not enough: an HEVC VPS header (0x40) also looks like an
-    // H.264 NAL type 0.
-    int h264Score = 0;
-    int h265Score = 0;
-    int inspected = 0;
-    size_t lastHeader = SIZE_MAX;
+    const uint8_t byte = data[header];
+    if (byte & 0x80) continue;  // forbidden_zero_bit must be zero
 
-    for (size_t i = 0; i + 3 < len && inspected < 16; i++)
-    {
-        size_t header = SIZE_MAX;
-        if (data[i] == 0x00 && data[i + 1] == 0x00 && data[i + 2] == 0x01)
-        {
-            header = i + 3;
-        }
-        else if (i + 4 < len && data[i] == 0x00 && data[i + 1] == 0x00 && data[i + 2] == 0x00 && data[i + 3] == 0x01)
-        {
-            header = i + 4;
-        }
-        if (header == SIZE_MAX || header >= len || header == lastHeader)
-            continue;
-        lastHeader = header;
+    const uint8_t h264_type = byte & 0x1F;
+    const uint8_t h265_type = (byte >> 1) & 0x3F;
 
-        const uint8_t byte = data[header];
-        if (byte & 0x80)
-            continue; // forbidden_zero_bit must be zero
-
-        const uint8_t h264Type = byte & 0x1F;
-        const uint8_t h265Type = (byte >> 1) & 0x3F;
-
-        // Parameter sets, SEI and AUD are strong evidence for HEVC.
-        if (h265Type == 32 || h265Type == 33 || h265Type == 34 || h265Type == 35 || h265Type == 39 || h265Type == 40)
-        {
-            h265Score++;
-        }
-        // Slice types, SEI, SPS/PPS/AUD are strong evidence for H.264.
-        if (h264Type == 1 || h264Type == 5 || h264Type == 6 || h264Type == 7 || h264Type == 8 || h264Type == 9)
-        {
-            h264Score++;
-        }
-        inspected++;
+    // Parameter sets, SEI and AUD are strong evidence for HEVC.
+    if (h265_type == 32 || h265_type == 33 || h265_type == 34 ||
+        h265_type == 35 || h265_type == 39 || h265_type == 40) {
+      h265_score++;
     }
+    // Slice types, SEI, SPS/PPS/AUD are strong evidence for H.264.
+    if (h264_type == 1 || h264_type == 5 || h264_type == 6 || h264_type == 7 ||
+        h264_type == 8 || h264_type == 9) {
+      h264_score++;
+    }
+    inspected++;
+  }
 
-    if (h265Score > h264Score)
-        return CodecType::H265;
-    return CodecType::H264;
+  if (h265_score > h264_score) return CodecType::kH265;
+  return CodecType::kH264;
 }
-bool BitstreamParser::parseFile(const std::string& path, const ProgressFn& progress)
-{
-    resetStorage();
-    m_error.clear();
+bool BitstreamParser::ParseFile(const std::string& path,
+                                 const ProgressFn& progress) {
+  ResetStorage();
+  error_.clear();
 
-    if (!m_mapped.open(path, m_error))
+  if (!mapped_.open(path, error_)) return false;
+  base_ = mapped_.data();
+  return scan(base_, (size_t)mapped_.size(), progress);
+}
+
+bool BitstreamParser::ParseBuffer(const uint8_t* data, size_t len) {
+  ResetStorage();
+  error_.clear();
+
+  if (!data || len < 4) {
+    error_ = "Buffer too small";
+    return false;
+  }
+  buffer_.assign(data, data + len);
+  base_ = buffer_.data();
+  return scan(base_, buffer_.size(), {});
+}
+
+bool BitstreamParser::scan(const uint8_t* data, size_t len,
+                           const ProgressFn& progress) {
+  if (codec_ == CodecType::kH264) {
+    codec_ = DetectCodec(data, len);
+  }
+
+  nals_.reserve(std::min<size_t>(len / 1024u, 8u * 1024u * 1024u));
+
+  size_t pos = 0;
+  uint8_t sc_len = 0;
+  int64_t first_start = find_start_code(data, len, pos, sc_len);
+  if (first_start < 0) {
+    error_ = "No start code found";
+    return false;
+  }
+
+  size_t current_start = (size_t)first_start;
+  uint8_t current_sc_len = sc_len;
+  const size_t report_step = 64u * 1024u * 1024u;
+  size_t next_report = report_step;
+
+  while (true) {
+    if (progress && current_start >= next_report) {
+      if (!progress((double)current_start / (double)len)) {
+        error_ = "Cancelled";
         return false;
-    m_base = m_mapped.data();
-    return scan(m_base, (size_t)m_mapped.size(), progress);
-}
-
-bool BitstreamParser::parseBuffer(const uint8_t* data, size_t len)
-{
-    resetStorage();
-    m_error.clear();
-
-    if (!data || len < 4)
-    {
-        m_error = "Buffer too small";
-        return false;
+      }
+      next_report = current_start + report_step;
     }
-    m_buffer.assign(data, data + len);
-    m_base = m_buffer.data();
-    return scan(m_base, m_buffer.size(), {});
-}
+    size_t search_from = current_start + current_sc_len;
+    if (codec_ == CodecType::kH264 && search_from < len) search_from += 1;
+    if (codec_ == CodecType::kH265 && search_from < len) search_from += 2;
 
-bool BitstreamParser::scan(const uint8_t* data, size_t len, const ProgressFn& progress)
-{
-    if (m_codec == CodecType::H264)
-    {
-        m_codec = detectCodec(data, len);
+    uint8_t next_sc_len = 0;
+    int64_t next_start = -1;
+    if (search_from < len) {
+      next_start = find_start_code(data, len, search_from, next_sc_len);
     }
 
-    m_nals.reserve(std::min<size_t>(len / 1024u, 8u * 1024u * 1024u));
+    const size_t end_pos = (next_start < 0) ? len : (size_t)next_start;
+    const uint32_t nal_size = (uint32_t)(end_pos - current_start);
 
-    size_t pos = 0;
-    uint8_t scLen = 0;
-    int64_t firstStart = findStartCode(data, len, pos, scLen);
-    if (firstStart < 0)
-    {
-        m_error = "No start code found";
-        return false;
-    }
+    NALUnit nal;
+    nal.codec = codec_;
+    nal.offset = current_start;
+    nal.size = nal_size;
+    nal.start_code_len = current_sc_len;
 
-    size_t currentStart = (size_t)firstStart;
-    uint8_t currentScLen = scLen;
-    const size_t reportStep = 64u * 1024u * 1024u;
-    size_t nextReport = reportStep;
-
-    while (true)
-    {
-        if (progress && currentStart >= nextReport)
-        {
-            if (!progress((double)currentStart / (double)len))
-            {
-                m_error = "Cancelled";
-                return false;
-            }
-            nextReport = currentStart + reportStep;
+    if (nal_size > current_sc_len) {
+      const uint8_t* hdr = data + current_start + current_sc_len;
+      nal.header_byte = hdr[0];
+      if (codec_ == CodecType::kH264) {
+        nal.nal_type = nal.header_byte & 0x1F;
+      } else {
+        nal.nal_type = (nal.header_byte >> 1) & 0x3F;
+        if (nal_size > current_sc_len + 1) {
+          nal.nuh_layer_id =
+              ((nal.header_byte & 0x80) >> 7) | ((hdr[1] & 0xF8) >> 3);
+          nal.nuh_temporal_id_plus1 = hdr[1] & 0x07;
         }
-        size_t searchFrom = currentStart + currentScLen;
-        if (m_codec == CodecType::H264 && searchFrom < len)
-            searchFrom += 1;
-        if (m_codec == CodecType::H265 && searchFrom < len)
-            searchFrom += 2;
-
-        uint8_t nextScLen = 0;
-        int64_t nextStart = -1;
-        if (searchFrom < len)
-        {
-            nextStart = findStartCode(data, len, searchFrom, nextScLen);
-        }
-
-        const size_t endPos = (nextStart < 0) ? len : (size_t)nextStart;
-        const uint32_t nalSize = (uint32_t)(endPos - currentStart);
-
-        NALUnit nal;
-        nal.codec = m_codec;
-        nal.offset = currentStart;
-        nal.size = nalSize;
-        nal.startCodeLen = currentScLen;
-
-        if (nalSize > currentScLen)
-        {
-            const uint8_t* hdr = data + currentStart + currentScLen;
-            nal.headerByte = hdr[0];
-            if (m_codec == CodecType::H264)
-            {
-                nal.nalType = nal.headerByte & 0x1F;
-            }
-            else
-            {
-                nal.nalType = (nal.headerByte >> 1) & 0x3F;
-                if (nalSize > currentScLen + 1)
-                {
-                    nal.nuhLayerId = ((nal.headerByte & 0x80) >> 7) | ((hdr[1] & 0xF8) >> 3);
-                    nal.nuhTemporalIdPlus1 = hdr[1] & 0x07;
-                }
-            }
-        }
-
-        m_nals.push_back(nal);
-
-        if (nextStart < 0)
-            break;
-        currentStart = (size_t)nextStart;
-        currentScLen = nextScLen;
+      }
     }
 
-    return true;
+    nals_.push_back(nal);
+
+    if (next_start < 0) break;
+    current_start = (size_t)next_start;
+    current_sc_len = next_sc_len;
+  }
+
+  return true;
 }
 
 // NAL type name mappings
 static const char* h264_nal_names[] = {
-    "UNSPECIFIED", "NON_IDR_SLICE", "PART_A",   "PART_B",   "PART_C",   "IDR_SLICE", "SEI",      "SPS",
-    "PPS",         "AUD",           "EOSSEQ",   "EOSTREAM", "FILLER",   "SPSEXT",    "RESERVED", "RESERVED",
-    "RESERVED",    "RESERVED",      "RESERVED", "RESERVED", "RESERVED", "RESERVED",  "RESERVED", "RESERVED",
-    "RESERVED",    "RESERVED",      "RESERVED", "RESERVED", "RESERVED", "RESERVED",  "RESERVED"};
+    "UNSPECIFIED", "NON_IDR_SLICE", "PART_A",   "PART_B",   "PART_C",
+    "IDR_SLICE",   "SEI",           "SPS",      "PPS",      "AUD",
+    "EOSSEQ",      "EOSTREAM",      "FILLER",   "SPSEXT",   "RESERVED",
+    "RESERVED",    "RESERVED",      "RESERVED", "RESERVED", "RESERVED",
+    "RESERVED",    "RESERVED",      "RESERVED", "RESERVED", "RESERVED",
+    "RESERVED",    "RESERVED",      "RESERVED", "RESERVED", "RESERVED",
+    "RESERVED"};
 
 static const char* h265_nal_names[] = {
     "TRAIL_N",
@@ -282,32 +260,28 @@ static const char* h265_nal_names[] = {
     "RSV_NVCL47",
 };
 
-std::string NALUnit::typeName() const
-{
-    if (codec == CodecType::H264)
-    {
-        if (nalType <= 30)
-            return h264_nal_names[nalType];
-        return "RESERVED";
-    }
-    constexpr size_t kH265NameCount = sizeof(h265_nal_names) / sizeof(h265_nal_names[0]);
-    if (nalType < kH265NameCount)
-        return h265_nal_names[nalType];
-    return "UNSPECIFIED";
+std::string NALUnit::TypeName() const {
+  if (codec == CodecType::kH264) {
+    if (nal_type <= 30) return h264_nal_names[nal_type];
+    return "RESERVED";
+  }
+  constexpr size_t k_h265_name_count =
+      sizeof(h265_nal_names) / sizeof(h265_nal_names[0]);
+  if (nal_type < k_h265_name_count) return h265_nal_names[nal_type];
+  return "UNSPECIFIED";
 }
 
-std::string NALUnit::summary() const
-{
-    char buf[128];
-    if (codec == CodecType::H264)
-    {
-        snprintf(buf, sizeof(buf), "H.264 | offset=0x%llX | size=%u | type=%u %s", (unsigned long long)offset, size,
-                 nalType, typeName().c_str());
-    }
-    else
-    {
-        snprintf(buf, sizeof(buf), "H.265 | offset=0x%llX | size=%u | type=%u %s (layer=%u tempId=%u)",
-                 (unsigned long long)offset, size, nalType, typeName().c_str(), nuhLayerId, nuhTemporalIdPlus1);
-    }
-    return std::string(buf);
+std::string NALUnit::summary() const {
+  char buf[128];
+  if (codec == CodecType::kH264) {
+    snprintf(buf, sizeof(buf), "H.264 | offset=0x%llX | size=%u | type=%u %s",
+             (unsigned long long)offset, size, nal_type, TypeName().c_str());
+  } else {
+    snprintf(
+        buf, sizeof(buf),
+        "H.265 | offset=0x%llX | size=%u | type=%u %s (layer=%u tempId=%u)",
+        (unsigned long long)offset, size, nal_type, TypeName().c_str(),
+        nuh_layer_id, nuh_temporal_id_plus1);
+  }
+  return std::string(buf);
 }
