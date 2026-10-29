@@ -1,12 +1,13 @@
 #pragma once
 
-#include "expgolomb.h"
-#include "nalunit.h"
 #include <cstdint>
 #include <string>
 #include <vector>
+#include "expgolomb.h"
+#include "nalunit.h"
 
-struct H265VPS {
+struct H265VPS
+{
     uint8_t vps_id = 0;
     bool base_layer_internal_flag = false;
     bool base_layer_available_flag = false;
@@ -16,7 +17,8 @@ struct H265VPS {
     uint8_t max_layer_id = 0;
 };
 
-struct H265SPS {
+struct H265SPS
+{
     uint8_t vps_id = 0;
     uint8_t sps_id = 0;
     uint8_t max_sub_layers_minus1 = 0;
@@ -77,7 +79,8 @@ struct H265SPS {
     std::string profileName() const;
 };
 
-struct H265PPS {
+struct H265PPS
+{
     uint8_t pps_id = 0;
     uint8_t sps_id = 0;
     bool dependent_slice_segments_enabled_flag = false;
@@ -116,26 +119,29 @@ struct H265PPS {
     bool pps_extension_present_flag = false;
 };
 
-struct H265SliceSegmentHeader {
+struct H265SliceSegmentHeader
+{
     bool first_slice_segment_in_pic_flag = true;
     bool isIrap = false;
     bool isIdr = false;
     bool dependent = false;
     uint32_t slice_pic_parameter_set_id = 0;
-    uint32_t slice_type = 1;   // 0 = B, 1 = P, 2 = I
+    uint32_t slice_type = 1; // 0 = B, 1 = P, 2 = I
     uint32_t pic_order_cnt_lsb = 0;
     bool pocValid = false;
 
-    char frameTypeChar() const {
-        if (isIrap || slice_type == 2) return 'I';
-        if (slice_type == 0) return 'B';
+    char frameTypeChar() const
+    {
+        if (isIrap || slice_type == 2)
+            return 'I';
+        if (slice_type == 0)
+            return 'B';
         return 'P';
     }
 };
 
-bool parseH265VPS(const NALUnit &nal, const uint8_t *data, H265VPS &out);
-bool parseH265SPS(const NALUnit &nal, const uint8_t *data, H265SPS &out);
-bool parseH265PPS(const NALUnit &nal, const uint8_t *data, H265PPS &out);
-bool parseH265SliceSegmentHeader(const NALUnit &nal, const uint8_t *data,
-                                 const H265SPS &sps, const H265PPS &pps,
-                                 H265SliceSegmentHeader &out);
+bool parseH265VPS(const NALUnit& nal, const uint8_t* data, H265VPS& out);
+bool parseH265SPS(const NALUnit& nal, const uint8_t* data, H265SPS& out);
+bool parseH265PPS(const NALUnit& nal, const uint8_t* data, H265PPS& out);
+bool parseH265SliceSegmentHeader(const NALUnit& nal, const uint8_t* data, const H265SPS& sps, const H265PPS& pps,
+                                 H265SliceSegmentHeader& out);

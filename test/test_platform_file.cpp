@@ -9,22 +9,24 @@
 #include <random>
 #include <string>
 
-namespace {
+namespace
+{
 
-std::filesystem::path tempPath() {
-    static std::mt19937 rng(std::random_device{}());
-    return std::filesystem::temp_directory_path() /
-           ("dia_mapped_" + std::to_string(rng()) + ".bin");
-}
+    std::filesystem::path tempPath()
+    {
+        static std::mt19937 rng(std::random_device{}());
+        return std::filesystem::temp_directory_path() / ("dia_mapped_" + std::to_string(rng()) + ".bin");
+    }
 
 } // namespace
 
-TEST(MappedFileTest, MapsExistingFile) {
+TEST(MappedFileTest, MapsExistingFile)
+{
     const std::filesystem::path path = tempPath();
     const uint8_t payload[] = {1, 2, 3, 4, 5, 6};
     {
         std::ofstream out(path, std::ios::binary);
-        out.write(reinterpret_cast<const char *>(payload), sizeof(payload));
+        out.write(reinterpret_cast<const char*>(payload), sizeof(payload));
     }
 
     MappedFile file;
@@ -34,13 +36,14 @@ TEST(MappedFileTest, MapsExistingFile) {
     ASSERT_NE(file.data(), nullptr);
     EXPECT_EQ(std::memcmp(file.data(), payload, sizeof(payload)), 0);
 
-    file.releaseResidentPages();  // must not crash and must keep the data valid
+    file.releaseResidentPages(); // must not crash and must keep the data valid
     EXPECT_EQ(std::memcmp(file.data(), payload, sizeof(payload)), 0);
 
     std::filesystem::remove(path);
 }
 
-TEST(MappedFileTest, ReportsMissingFile) {
+TEST(MappedFileTest, ReportsMissingFile)
+{
     MappedFile file;
     std::string error;
     EXPECT_FALSE(file.open("/definitely/not/here.bin", error));
@@ -48,7 +51,8 @@ TEST(MappedFileTest, ReportsMissingFile) {
     EXPECT_EQ(file.size(), 0u);
 }
 
-TEST(MappedFileTest, MoveTransfersOwnership) {
+TEST(MappedFileTest, MoveTransfersOwnership)
+{
     const std::filesystem::path path = tempPath();
     {
         std::ofstream out(path, std::ios::binary);

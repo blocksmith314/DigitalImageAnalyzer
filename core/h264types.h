@@ -1,12 +1,13 @@
 #pragma once
 
-#include "expgolomb.h"
-#include "nalunit.h"
 #include <cstdint>
 #include <string>
 #include <vector>
+#include "expgolomb.h"
+#include "nalunit.h"
 
-struct H264SPS {
+struct H264SPS
+{
     uint8_t profile_idc = 0;
     uint8_t level_idc = 0;
     uint8_t sps_id = 0;
@@ -60,7 +61,8 @@ struct H264SPS {
     std::string profileName() const;
 };
 
-struct H264PPS {
+struct H264PPS
+{
     uint8_t pps_id = 0;
     uint8_t sps_id = 0;
     bool entropy_coding_mode_flag = false;
@@ -82,10 +84,11 @@ struct H264PPS {
     int32_t second_chroma_qp_index_offset = 0;
 };
 
-bool parseH264SPS(const NALUnit &nal, const uint8_t *data, H264SPS &out);
-bool parseH264PPS(const NALUnit &nal, const uint8_t *data, H264PPS &out);
+bool parseH264SPS(const NALUnit& nal, const uint8_t* data, H264SPS& out);
+bool parseH264PPS(const NALUnit& nal, const uint8_t* data, H264PPS& out);
 
-struct H264SliceHeader {
+struct H264SliceHeader
+{
     uint32_t first_mb_in_slice = 0;
     uint32_t slice_type = 0;
     uint32_t frame_num = 0;
@@ -93,11 +96,14 @@ struct H264SliceHeader {
     bool isIFrame() const { return slice_type % 5 == 2; }
     bool isBFrame() const { return slice_type % 5 == 1; }
     bool isPFrame() const { return slice_type % 5 == 0 || slice_type % 5 == 3 || slice_type % 5 == 4; }
-    char frameTypeChar() const {
-        if (isIFrame()) return 'I';
-        if (isBFrame()) return 'B';
+    char frameTypeChar() const
+    {
+        if (isIFrame())
+            return 'I';
+        if (isBFrame())
+            return 'B';
         return 'P';
     }
 };
 
-bool parseH264SliceHeader(const NALUnit &nal, const uint8_t *data, const H264SPS &sps, H264SliceHeader &out);
+bool parseH264SliceHeader(const NALUnit& nal, const uint8_t* data, const H264SPS& sps, H264SliceHeader& out);

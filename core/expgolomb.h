@@ -6,9 +6,10 @@
 // Streaming RBSP reader with zero copies: skips emulation-prevention bytes
 // (0x000003) on the fly while decoding. Suitable for slice headers where only
 // the first few bytes are needed and copying the whole NAL is too expensive.
-class RbspBitReader {
+class RbspBitReader
+{
 public:
-    RbspBitReader(const uint8_t *data, size_t len) : m_data(data), m_len(len) {}
+    RbspBitReader(const uint8_t* data, size_t len) : m_data(data), m_len(len) {}
 
     bool readBit();
     uint64_t readBits(int n);
@@ -18,7 +19,7 @@ public:
 private:
     uint8_t nextByte();
 
-    const uint8_t *m_data;
+    const uint8_t* m_data;
     size_t m_len;
     size_t m_pos = 0;
     uint8_t m_cur = 0;
@@ -28,10 +29,11 @@ private:
     bool m_eof = false;
 };
 
-class BitReader {
+class BitReader
+{
 public:
-    explicit BitReader(const std::vector<uint8_t> &data);
-    BitReader(const uint8_t *data, size_t len);
+    explicit BitReader(const std::vector<uint8_t>& data);
+    BitReader(const uint8_t* data, size_t len);
 
     uint64_t readBits(int n);
     uint64_t readUe();
@@ -46,7 +48,7 @@ public:
 
 private:
     std::vector<uint8_t> m_owned;
-    const uint8_t *m_data;
+    const uint8_t* m_data;
     size_t m_len;
     size_t m_pos = 0;
     int m_bitPos = 0;
