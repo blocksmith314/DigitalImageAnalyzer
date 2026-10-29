@@ -52,7 +52,7 @@ ctest --test-dir build --output-on-failure
 | `test/tools/profile_parse.sh` | benchmark + macOS `sample` hot-function report |
 | `test/tools/tidy.sh` | run clang-tidy on changed files (or `--all`) |
 
-Build outputs go to `build/test/tools/`. Both tools are grouped in the `tools`
+Build outputs go to `build/test/tools/`. These tools are grouped in the `tools`
 IDE folder and are not registered with CTest.
 
 ## Layout
@@ -63,7 +63,7 @@ core/                                    parsing only (no Qt, no FFmpeg)
 ffmpeg/                                  demux, decode, audio
 test/                                    gtest sources and fixtures
 test/tools/                              developer tools
-scripts/                                 packaging helpers (macOS)
+scripts/                                 packaging helpers (macOS and Windows)
 ```
 
 Keep `core/` free of Qt/FFmpeg dependencies: it is what the parser tests link.
@@ -83,14 +83,11 @@ Keep `core/` free of Qt/FFmpeg dependencies: it is what the parser tests link.
 
 ## Coding conventions
 
-Baseline: the [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html),
-C++17. Where the rules below are silent, follow Google style and match the file
-you are editing.
-
-Formatting is defined by `.clang-format` at the repository root, which must stay
-in sync with the existing style (4 spaces, same-line braces, ~100 columns,
-`Type &name`). Run `clang-format` on the files you change; reformat-only changes
-belong in a separate PR.
+Naming and structure follow the [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html),
+C++17. Formatting is defined entirely by `.clang-format` (LLVM-based: 4-space
+indent, Allman braces, 120 columns, `Type&`, sorted includes) and overrides the
+Google formatting rules. Run `clang-format` on the files you change;
+reformat-only changes belong in a separate PR.
 
 Static analysis is defined by `.clang-tidy` (LLVM 20 checks) and run through
 `test/tools/tidy.sh` (changed files) or `test/tools/tidy.sh --all`. It needs
@@ -98,17 +95,20 @@ Static analysis is defined by `.clang-tidy` (LLVM 20 checks) and run through
 `CMAKE_CXX_CLANG_TIDY` globally: it makes every build much slower. Fix warnings
 incrementally; only `bugprone-use-after-move` is treated as an error. Keep the
 clang-format/clang-tidy versions aligned across the team, since different LLVM
-releases can report different results. The deviations in the table are deliberate: they describe the
-existing tree and changing them would be a whole-repository rename/reformat.
+releases can report different results.
+
+The deviations below are deliberate: they describe the existing tree, and
+changing them would mean a whole-repository rename/reformat.
 
 **Deviations from Google style**
 
 | Topic | Google style | This project |
 |-------|--------------|--------------|
 | Indentation | 2 spaces | 4 spaces |
+| Braces | attached | next line (Allman) |
 | Function/variable names | `snake_case` | `camelCase` |
 | Member variables | trailing underscore (`member_`) | `m_` prefix |
-| Line length | 80 columns | ~100 columns |
+| Line length | 80 columns | 120 columns |
 | Header guard | `#ifndef` guard | `#pragma once` |
 | Exceptions | not used | not thrown across module/FFmpeg boundaries |
 
@@ -120,7 +120,8 @@ Everything else follows Google: `PascalCase` types, `kPascalCase` constants,
 
 - Keep FFmpeg includes in `.cpp` files; public headers must not expose FFmpeg
   or Qt Multimedia types.
-- Include order: own header, Qt, standard library, `extern "C"` FFmpeg.
+- Includes are sorted by `.clang-format` (the file's own header stays first);
+  keep new includes in the matching block and put FFmpeg `extern "C"` last.
 - No new third-party dependency without discussion; `third_party/` is
   git-ignored and fetched on demand.
 - OS-specific code belongs in `core/platformfile.*`; do not spread `#ifdef
