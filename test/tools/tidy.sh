@@ -79,7 +79,7 @@ ARGS=(-p "$BUILD_DIR")
 if "$TIDY" "${ARGS[@]}" "${SELECTED[@]}" 2>&1 | tee /tmp/dia_tidy.log; then
     :
 fi
-WARNINGS=$(grep -c "warning:" /tmp/dia_tidy.log || true)
+ISSUES=$(grep -cE "warning:|error:" /tmp/dia_tidy.log || true)
 echo
-echo "warnings: $WARNINGS (full log: /tmp/dia_tidy.log)"
-[ "$WARNINGS" -eq 0 ]
+echo "issues: $ISSUES (full log: /tmp/dia_tidy.log)"
+[ "$ISSUES" -eq 0 ]
