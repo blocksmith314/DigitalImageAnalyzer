@@ -1,7 +1,5 @@
 #include <gtest/gtest.h>
 
-#include "platformfile.h"
-
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -9,74 +7,72 @@
 #include <random>
 #include <string>
 
-namespace
-{
+#include "platformfile.h"
 
-    std::filesystem::path tempPath()
-    {
-        static std::mt19937 rng(std::random_device{}());
-        return std::filesystem::temp_directory_path() / ("dia_mapped_" + std::to_string(rng()) + ".bin");
-    }
+namespace {
 
-} // namespace
-
-TEST(MappedFileTest, MapsExistingFile)
-{
-    const std::filesystem::path path = tempPath();
-    const uint8_t payload[] = {1, 2, 3, 4, 5, 6};
-    {
-        std::ofstream out(path, std::ios::binary);
-        out.write(reinterpret_cast<const char*>(payload), sizeof(payload));
-    }
-
-    MappedFile file;
-    std::string error;
-    ASSERT_TRUE(file.open(path.string(), error)) << error;
-    EXPECT_EQ(file.size(), sizeof(payload));
-    ASSERT_NE(file.data(), nullptr);
-    EXPECT_EQ(std::memcmp(file.data(), payload, sizeof(payload)), 0);
-
-    file.releaseResidentPages(); // must not crash and must keep the data valid
-    EXPECT_EQ(std::memcmp(file.data(), payload, sizeof(payload)), 0);
-
-    std::filesystem::remove(path);
+std::filesystem::path tempPath() {
+  static std::mt19937 rng(std::random_device{}());
+  return std::filesystem::temp_directory_path() /
+         ("dia_mapped_" + std::to_string(rng()) + ".bin");
 }
 
-TEST(MappedFileTest, ReportsMissingFile)
-{
-    MappedFile file;
-    std::string error;
-    EXPECT_FALSE(file.open("/definitely/not/here.bin", error));
-    EXPECT_FALSE(error.empty());
-    EXPECT_EQ(file.size(), 0u);
+}  // namespace
+
+TEST(MappedFileTest, MapsExistingFile) {
+  const std::filesystem::path path = tempPath();
+  const uint8_t payload[] = {1, 2, 3, 4, 5, 6};
+  {
+    std::ofstream out(path, std::ios::binary);
+    out.write(reinterpret_cast<const char*>(payload), sizeof(payload));
+  }
+
+  MappedFile file;
+  std::string error;
+  ASSERT_TRUE(file.open(path.string(), error)) << error;
+  EXPECT_EQ(file.size(), sizeof(payload));
+  ASSERT_NE(file.data(), nullptr);
+  EXPECT_EQ(std::memcmp(file.data(), payload, sizeof(payload)), 0);
+
+  file.ReleaseResidentPages();  // must not crash and must keep the data valid
+  EXPECT_EQ(std::memcmp(file.data(), payload, sizeof(payload)), 0);
+
+  std::filesystem::remove(path);
 }
 
-TEST(MappedFileTest, MoveTransfersOwnership)
-{
-    const std::filesystem::path path = tempPath();
-    {
-        std::ofstream out(path, std::ios::binary);
-        out << "abcdef";
-    }
+TEST(MappedFileTest, ReportsMissingFile) {
+  MappedFile file;
+  std::string error;
+  EXPECT_FALSE(file.open("/definitely/not/here.bin", error));
+  EXPECT_FALSE(error.empty());
+  EXPECT_EQ(file.size(), 0u);
+}
 
-    MappedFile source;
-    std::string error;
-    ASSERT_TRUE(source.open(path.string(), error)) << error;
+TEST(MappedFileTest, MoveTransfersOwnership) {
+  const std::filesystem::path path = tempPath();
+  {
+    std::ofstream out(path, std::ios::binary);
+    out << "abcdef";
+  }
 
-    MappedFile moved(std::move(source));
-    EXPECT_EQ(source.size(), 0u);
-    EXPECT_EQ(moved.size(), 6u);
-    ASSERT_NE(moved.data(), nullptr);
-    EXPECT_EQ(std::memcmp(moved.data(), "abcdef", 6), 0);
+  MappedFile source;
+  std::string error;
+  ASSERT_TRUE(source.open(path.string(), error)) << error;
 
-    MappedFile assigned;
-    assigned = std::move(moved);
-    EXPECT_EQ(moved.size(), 0u);
-    EXPECT_EQ(assigned.size(), 6u);
+  MappedFile moved(std::move(source));
+  EXPECT_EQ(source.size(), 0u);
+  EXPECT_EQ(moved.size(), 6u);
+  ASSERT_NE(moved.data(), nullptr);
+  EXPECT_EQ(std::memcmp(moved.data(), "abcdef", 6), 0);
 
-    assigned.close();
-    EXPECT_EQ(assigned.size(), 0u);
-    EXPECT_EQ(assigned.data(), nullptr);
+  MappedFile assigned;
+  assigned = std::move(moved);
+  EXPECT_EQ(moved.size(), 0u);
+  EXPECT_EQ(assigned.size(), 6u);
 
-    std::filesystem::remove(path);
+  assigned.close();
+  EXPECT_EQ(assigned.size(), 0u);
+  EXPECT_EQ(assigned.data(), nullptr);
+
+  std::filesystem::remove(path);
 }

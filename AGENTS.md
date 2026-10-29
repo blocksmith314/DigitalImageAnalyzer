@@ -83,38 +83,23 @@ Keep `core/` free of Qt/FFmpeg dependencies: it is what the parser tests link.
 
 ## Coding conventions
 
-Naming and structure follow the [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html),
-C++17. Formatting is defined entirely by `.clang-format` (LLVM-based: 4-space
-indent, Allman braces, 120 columns, `Type&`, sorted includes) and overrides the
-Google formatting rules. Run `clang-format` on the files you change;
-reformat-only changes belong in a separate PR.
+Follow the [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html),
+C++17. Formatting is defined by `.clang-format`; run `clang-format` on the files
+you change and keep reformat-only changes in a separate PR.
 
-Static analysis is defined by `.clang-tidy` (LLVM 20 checks) and run through
+Static analysis is defined by `.clang-tidy` and run through
 `test/tools/tidy.sh` (changed files) or `test/tools/tidy.sh --all`. It needs
 `build/compile_commands.json`, which CMake exports automatically. Do not enable
-`CMAKE_CXX_CLANG_TIDY` globally: it makes every build much slower. Fix warnings
-incrementally; only `bugprone-use-after-move` is treated as an error. Keep the
-clang-format/clang-tidy versions aligned across the team, since different LLVM
-releases can report different results.
+`CMAKE_CXX_CLANG_TIDY` globally: it makes every build much slower.
 
-The deviations below are deliberate: they describe the existing tree, and
-changing them would mean a whole-repository rename/reformat.
+**Naming**
 
-**Deviations from Google style**
-
-| Topic | Google style | This project |
-|-------|--------------|--------------|
-| Indentation | 2 spaces | 4 spaces |
-| Braces | attached | next line (Allman) |
-| Function/variable names | `snake_case` | `camelCase` |
-| Member variables | trailing underscore (`member_`) | `m_` prefix |
-| Line length | 80 columns | 120 columns |
-| Header guard | `#ifndef` guard | `#pragma once` |
-| Exceptions | not used | not thrown across module/FFmpeg boundaries |
-
-Everything else follows Google: `PascalCase` types, `kPascalCase` constants,
-`enum class`, lowercase file names, one class per header pair, and
-`//` comments in English that explain *why*.
+Types and functions use mixed case (`MainWindow`, `LoadFile`); variables and
+parameters use `snake_case`; members use `snake_case_` with a trailing
+underscore; constants and enum values use `kPascalCase`. Prefer `enum class`,
+lowercase file names, and `//` comments in English that explain *why*. Keep
+related types together in one header. Qt virtual overrides keep their Qt names
+(`rowCount`, `columnCount`, event handlers).
 
 **Headers and dependencies**
 
@@ -140,19 +125,19 @@ Everything else follows Google: `PascalCase` types, `kPascalCase` constants,
 
 **Errors**
 
-- Follow the existing `bool` return + `lastError()` pattern.
+- Follow the existing `bool` return + `LastError()` pattern.
 - Do not throw exceptions across module or FFmpeg boundaries; convert failures
   to `false` + message.
 - User-facing failures are reported once at the call site, not logged in loops.
 
 **Performance**
 
-- No heap allocation in per-NAL or per-frame/per-paint paths (see
-  `NalListModel::data()`); cache constant strings/colors instead.
-- Never copy NAL payloads into `NALUnit`; use `BitstreamParser::nalData()`.
-- Use `std::string_view`/`const char*` for constant names, not `std::string`.
-- Long operations must not block the GUI thread for their whole duration;
-  prefer incremental progress or background work when adding new ones.
+- Avoid heap allocation in hot paths (per-NAL parsing, per-frame and
+  per-paint model code); cache constant strings and colors.
+- Never store NAL payloads in `NALUnit`; keep offsets/sizes and access bytes
+  through the parser.
+- Keep the GUI thread responsive: use incremental progress or background work
+  for long operations.
 
 **Qt**
 
@@ -172,7 +157,7 @@ Everything else follows Google: `PascalCase` types, `kPascalCase` constants,
 
 - `core/` must not depend on Qt or FFmpeg.
 - Large files: parse with mmap and metadata only; never store NAL payloads in
-  `NALUnit` (use `BitstreamParser::nalData()`).
+  `NALUnit` (use `BitstreamParser::NalData()`).
 - Path handling must be UTF-8-safe; on Windows use the wide-character file APIs.
 - Codec detection must not rely on a single NAL header; score several headers.
 - Decoding and audio must stay testable headless (`AudioDecoder` has no Qt

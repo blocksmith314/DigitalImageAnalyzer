@@ -1,35 +1,37 @@
-#pragma once
+#ifndef DIA_CORE_PLATFORMFILE_H_
+#define DIA_CORE_PLATFORMFILE_H_
 
 #include <cstdint>
 #include <string>
 
 // Read-only file mapping with a portable interface: POSIX mmap on macOS/Linux,
 // CreateFileMapping/MapViewOfFile on Windows.
-class MappedFile
-{
-public:
-    MappedFile() = default;
-    ~MappedFile();
+class MappedFile {
+ public:
+  MappedFile() = default;
+  ~MappedFile();
 
-    MappedFile(const MappedFile&) = delete;
-    MappedFile& operator=(const MappedFile&) = delete;
-    MappedFile(MappedFile&& other) noexcept;
-    MappedFile& operator=(MappedFile&& other) noexcept;
+  MappedFile(const MappedFile&) = delete;
+  MappedFile& operator=(const MappedFile&) = delete;
+  MappedFile(MappedFile&& other) noexcept;
+  MappedFile& operator=(MappedFile&& other) noexcept;
 
-    bool open(const std::string& path, std::string& error);
-    void close();
-    void releaseResidentPages();
+  bool open(const std::string& path, std::string& error);
+  void close();
+  void ReleaseResidentPages();
 
-    const uint8_t* data() const { return m_data; }
-    uint64_t size() const { return m_size; }
+  const uint8_t* data() const { return Data; }
+  uint64_t size() const { return size_; }
 
-private:
+ private:
 #ifdef _WIN32
-    void* m_file = nullptr; // HANDLE
-    void* m_mapping = nullptr; // HANDLE
+  void* file_ = nullptr;     // HANDLE
+  void* mapping_ = nullptr;  // HANDLE
 #else
-    void* m_mapping = nullptr; // mmap address
+  void* mapping_ = nullptr;  // mmap address
 #endif
-    const uint8_t* m_data = nullptr;
-    uint64_t m_size = 0;
+  const uint8_t* Data = nullptr;
+  uint64_t size_ = 0;
 };
+
+#endif  // DIA_CORE_PLATFORMFILE_H_

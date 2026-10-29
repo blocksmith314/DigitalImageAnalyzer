@@ -1,79 +1,79 @@
 #include <gtest/gtest.h>
 
-#include "decoder.h"
-
 #include <fstream>
 #include <string>
 
-namespace
-{
+#include "decoder.h"
 
-    std::string dataPath(const char* name) { return std::string(TEST_DATA_DIR) + "/" + name; }
+namespace {
 
-    bool exists(const std::string& path)
-    {
-        std::ifstream file(path);
-        return file.good();
-    }
-
-} // namespace
-
-TEST(DecoderTest, OpensMp4)
-{
-    if (!exists(dataPath("sample_720p.mp4")))
-        GTEST_SKIP() << "MP4 fixture missing";
-
-    FFmpegDecoder decoder;
-    ASSERT_TRUE(decoder.openFile(dataPath("sample_720p.mp4"), CodecType::H264)) << decoder.lastError();
-    EXPECT_NEAR(decoder.frameRate(), 10.0, 0.01);
-    EXPECT_EQ(decoder.width(), 1280);
-    EXPECT_EQ(decoder.height(), 720);
-    EXPECT_TRUE(decoder.hasTimestamps());
+std::string data_path(const char* name) {
+  return std::string(TEST_DATA_DIR) + "/" + name;
 }
 
-TEST(DecoderTest, DecodesFirstFrame)
-{
-    if (!exists(dataPath("sample_720p.mp4")))
-        GTEST_SKIP() << "MP4 fixture missing";
-
-    FFmpegDecoder decoder;
-    ASSERT_TRUE(decoder.openFile(dataPath("sample_720p.mp4"), CodecType::H264)) << decoder.lastError();
-
-    DecodedFrame frame;
-    ASSERT_TRUE(decoder.decodeNextFrame(frame));
-    ASSERT_FALSE(frame.image.isNull());
-    EXPECT_EQ(frame.image.width(), 1280);
-    EXPECT_EQ(frame.image.height(), 720);
-    EXPECT_NEAR(frame.ptsSec, 0.0, 0.001);
+bool exists(const std::string& path) {
+  std::ifstream file(path);
+  return file.good();
 }
 
-TEST(DecoderTest, SeeksToFrameTimestamp)
-{
-    if (!exists(dataPath("sample_720p.mp4")))
-        GTEST_SKIP() << "MP4 fixture missing";
+}  // namespace
 
-    FFmpegDecoder decoder;
-    ASSERT_TRUE(decoder.openFile(dataPath("sample_720p.mp4"), CodecType::H264)) << decoder.lastError();
+TEST(DecoderTest, OpensMp4) {
+  if (!exists(data_path("sample_720p.mp4")))
+    GTEST_SKIP() << "MP4 fixture missing";
 
-    ASSERT_TRUE(decoder.seekToFrame(5));
-    DecodedFrame frame;
-    ASSERT_TRUE(decoder.decodeNextFrame(frame));
-    ASSERT_FALSE(frame.image.isNull());
-    EXPECT_NEAR(frame.ptsSec, 0.5, 0.01); // 10 fps
+  FFmpegDecoder decoder;
+  ASSERT_TRUE(decoder.OpenFile(data_path("sample_720p.mp4"), CodecType::kH264))
+      << decoder.LastError();
+  EXPECT_NEAR(decoder.FrameRate(), 10.0, 0.01);
+  EXPECT_EQ(decoder.width(), 1280);
+  EXPECT_EQ(decoder.height(), 720);
+  EXPECT_TRUE(decoder.HasTimestamps());
 }
 
-TEST(DecoderTest, RawStreamHasNoTimestamps)
-{
-    if (!exists(dataPath("output.h264")))
-        GTEST_SKIP() << "sample stream missing";
+TEST(DecoderTest, DecodesFirstFrame) {
+  if (!exists(data_path("sample_720p.mp4")))
+    GTEST_SKIP() << "MP4 fixture missing";
 
-    FFmpegDecoder decoder;
-    ASSERT_TRUE(decoder.openFile(dataPath("output.h264"), CodecType::H264)) << decoder.lastError();
-    EXPECT_FALSE(decoder.hasTimestamps());
+  FFmpegDecoder decoder;
+  ASSERT_TRUE(decoder.OpenFile(data_path("sample_720p.mp4"), CodecType::kH264))
+      << decoder.LastError();
 
-    DecodedFrame frame;
-    ASSERT_TRUE(decoder.decodeNextFrame(frame));
-    ASSERT_FALSE(frame.image.isNull());
-    EXPECT_EQ(frame.image.width(), 352);
-    EXPECT_EQ(frame.image.height(), 288);
+  DecodedFrame frame;
+  ASSERT_TRUE(decoder.DecodeNextFrame(frame));
+  ASSERT_FALSE(frame.image.isNull());
+  EXPECT_EQ(frame.image.width(), 1280);
+  EXPECT_EQ(frame.image.height(), 720);
+  EXPECT_NEAR(frame.pts_sec, 0.0, 0.001);
+}
+
+TEST(DecoderTest, SeeksToFrameTimestamp) {
+  if (!exists(data_path("sample_720p.mp4")))
+    GTEST_SKIP() << "MP4 fixture missing";
+
+  FFmpegDecoder decoder;
+  ASSERT_TRUE(decoder.OpenFile(data_path("sample_720p.mp4"), CodecType::kH264))
+      << decoder.LastError();
+
+  ASSERT_TRUE(decoder.SeekToFrame(5));
+  DecodedFrame frame;
+  ASSERT_TRUE(decoder.DecodeNextFrame(frame));
+  ASSERT_FALSE(frame.image.isNull());
+  EXPECT_NEAR(frame.pts_sec, 0.5, 0.01);  // 10 fps
+}
+
+TEST(DecoderTest, RawStreamHasNoTimestamps) {
+  if (!exists(data_path("output.h264")))
+    GTEST_SKIP() << "sample stream missing";
+
+  FFmpegDecoder decoder;
+  ASSERT_TRUE(decoder.OpenFile(data_path("output.h264"), CodecType::kH264))
+      << decoder.LastError();
+  EXPECT_FALSE(decoder.HasTimestamps());
+
+  DecodedFrame frame;
+  ASSERT_TRUE(decoder.DecodeNextFrame(frame));
+  ASSERT_FALSE(frame.image.isNull());
+  EXPECT_EQ(frame.image.width(), 352);
+  EXPECT_EQ(frame.image.height(), 288);
 }
