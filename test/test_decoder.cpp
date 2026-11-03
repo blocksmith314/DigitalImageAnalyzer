@@ -20,7 +20,7 @@ bool exists(const std::string& path) {
 
 TEST(DecoderTest, OpensMp4) {
   if (!exists(data_path("sample_720p.mp4")))
-    GTEST_SKIP() << "MP4 fixture missing";
+    {GTEST_SKIP() << "MP4 fixture missing";}
 
   FFmpegDecoder decoder;
   ASSERT_TRUE(decoder.OpenFile(data_path("sample_720p.mp4"), CodecType::kH264))
@@ -33,7 +33,7 @@ TEST(DecoderTest, OpensMp4) {
 
 TEST(DecoderTest, DecodesFirstFrame) {
   if (!exists(data_path("sample_720p.mp4")))
-    GTEST_SKIP() << "MP4 fixture missing";
+    {GTEST_SKIP() << "MP4 fixture missing";}
 
   FFmpegDecoder decoder;
   ASSERT_TRUE(decoder.OpenFile(data_path("sample_720p.mp4"), CodecType::kH264))
@@ -49,7 +49,7 @@ TEST(DecoderTest, DecodesFirstFrame) {
 
 TEST(DecoderTest, SeeksToFrameTimestamp) {
   if (!exists(data_path("sample_720p.mp4")))
-    GTEST_SKIP() << "MP4 fixture missing";
+    {GTEST_SKIP() << "MP4 fixture missing";}
 
   FFmpegDecoder decoder;
   ASSERT_TRUE(decoder.OpenFile(data_path("sample_720p.mp4"), CodecType::kH264))
@@ -64,7 +64,7 @@ TEST(DecoderTest, SeeksToFrameTimestamp) {
 
 TEST(DecoderTest, RawStreamHasNoTimestamps) {
   if (!exists(data_path("output.h264")))
-    GTEST_SKIP() << "sample stream missing";
+    {GTEST_SKIP() << "sample stream missing";}
 
   FFmpegDecoder decoder;
   ASSERT_TRUE(decoder.OpenFile(data_path("output.h264"), CodecType::kH264))

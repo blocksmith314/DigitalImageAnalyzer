@@ -102,7 +102,8 @@ void AudioPlayer::close() {
 }
 
 void AudioPlayer::play() {
-  if (!has_audio_ || !impl_) return;
+  if (!has_audio_ || !impl_) { return;
+}
 
   if (!sink_) {
     const QAudioDevice device = QMediaDevices::defaultAudioOutput();
@@ -111,7 +112,8 @@ void AudioPlayer::play() {
     format.setSampleRate(48000);
     format.setChannelCount(2);
     format.setSampleFormat(QAudioFormat::Int16);
-    if (!device.isFormatSupported(format)) format = device.preferredFormat();
+    if (!device.isFormatSupported(format)) { format = device.preferredFormat();
+}
 
     impl_->outFormat = format;
     impl_->decoder->SetOutputFormat(format.sampleRate(),
@@ -133,7 +135,8 @@ void AudioPlayer::play() {
 
 void AudioPlayer::pause() {
   timer_->stop();
-  if (sink_) sink_->suspend();
+  if (sink_) { sink_->suspend();
+}
   playing_ = false;
 }
 
@@ -143,7 +146,8 @@ void AudioPlayer::stop() {
 }
 
 void AudioPlayer::SeekTo(double seconds) {
-  if (!impl_ || !has_audio_) return;
+  if (!impl_ || !has_audio_) { return;
+}
 
   impl_->decoder->SeekTo(seconds);
   {
@@ -152,7 +156,8 @@ void AudioPlayer::SeekTo(double seconds) {
   }
   eof_ = false;
 
-  if (playing_) pump();
+  if (playing_) { pump();
+}
 }
 
 qint64 AudioPlayer::AvailablePcm() const {
@@ -163,14 +168,16 @@ qint64 AudioPlayer::AvailablePcm() const {
 qint64 AudioPlayer::ReadPcm(char* data, qint64 maxLen) {
   QMutexLocker lock(&mutex_);
   const qint64 n = qMin<qint64>(maxLen, ring_.size());
-  if (n <= 0) return 0;
+  if (n <= 0) { return 0;
+}
   memcpy(data, ring_.constData(), (size_t)n);
   ring_.remove(0, (int)n);
   return n;
 }
 
 void AudioPlayer::pump() {
-  if (!impl_ || !sink_) return;
+  if (!impl_ || !sink_) { return;
+}
 
   const int max_ring = impl_->outFormat.bytesForDuration(500000);  // 500 ms
   QByteArray decoded;

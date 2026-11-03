@@ -3,7 +3,6 @@
 
 #include <QImage>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "nalunit.h"
@@ -22,6 +21,11 @@ class FFmpegDecoder {
  public:
   FFmpegDecoder();
   ~FFmpegDecoder();
+
+  FFmpegDecoder(const FFmpegDecoder&) = delete;
+  FFmpegDecoder& operator=(const FFmpegDecoder&) = delete;
+  FFmpegDecoder(FFmpegDecoder&&) = delete;
+  FFmpegDecoder& operator=(FFmpegDecoder&&) = delete;
 
   bool OpenFile(const std::string& path, CodecType codec);
   void close();

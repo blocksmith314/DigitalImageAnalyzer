@@ -35,7 +35,9 @@ FFmpegDecoder::~FFmpegDecoder() {
 
 bool FFmpegDecoder::OpenFile(const std::string& path, CodecType codec) {
   close();
-  if (impl_) *impl_ = Impl();
+  if (impl_) {
+    *impl_ = Impl();
+  }
 
   int codec_id =
       (codec == CodecType::kH264) ? AV_CODEC_ID_H264 : AV_CODEC_ID_HEVC;
@@ -71,7 +73,9 @@ bool FFmpegDecoder::OpenFile(const std::string& path, CodecType codec) {
 
   AVStream* stream = impl_->fmtCtx->streams[impl_->video_stream_idx];
   const AVCodec* codecPtr = avcodec_find_decoder(stream->codecpar->codec_id);
-  if (!codecPtr) codecPtr = avcodec_find_decoder((AVCodecID)codec_id);
+  if (!codecPtr) {
+    codecPtr = avcodec_find_decoder((AVCodecID)codec_id);
+  }
   if (!codecPtr) {
     error_ = "Codec not found";
     close();
@@ -109,7 +113,9 @@ bool FFmpegDecoder::OpenFile(const std::string& path, CodecType codec) {
   } else if (stream->r_frame_rate.den && stream->r_frame_rate.num) {
     frame_rate_ = av_q2d(stream->r_frame_rate);
   }
-  if (frame_rate_ <= 0) frame_rate_ = 30.0;
+  if (frame_rate_ <= 0) {
+    frame_rate_ = 30.0;
+  }
 
   const char* fmtName = (impl_->fmtCtx->iformat && impl_->fmtCtx->iformat->name)
                             ? impl_->fmtCtx->iformat->name
@@ -155,12 +161,16 @@ bool FFmpegDecoder::DecodeNextFrame(DecodedFrame& out) {
 }
 
 bool FFmpegDecoder::ConvertFrame(const AVFrame* frame, DecodedFrame& out) {
-  if (!frame || !impl_ || !impl_->codecCtx) return false;
+  if (!frame || !impl_ || !impl_->codecCtx) {
+    return false;
+  }
   if (!impl_->sws_ctx) {
     impl_->sws_ctx = sws_getContext(width_, height_, impl_->codecCtx->pix_fmt,
                                     width_, height_, AV_PIX_FMT_RGB24,
                                     SWS_BILINEAR, nullptr, nullptr, nullptr);
-    if (!impl_->sws_ctx) return false;
+    if (!impl_->sws_ctx) {
+      return false;
+    }
   }
 
   uint8_t* dst[1] = {impl_->rgbBuffer};
@@ -176,7 +186,9 @@ bool FFmpegDecoder::ConvertFrame(const AVFrame* frame, DecodedFrame& out) {
 }
 
 bool FFmpegDecoder::DecodeNextFrame(DecodedFrame& out, bool convert) {
-  if (!impl_ || !impl_->codecCtx || !impl_->fmtCtx) return false;
+  if (!impl_ || !impl_->codecCtx || !impl_->fmtCtx) {
+    return false;
+  }
 
   if (impl_->has_pending) {
     out = impl_->pending;
@@ -203,7 +215,9 @@ bool FFmpegDecoder::DecodeNextFrame(DecodedFrame& out, bool convert) {
     while (avcodec_receive_frame(impl_->codecCtx, frame) >= 0) {
       // Keep a reference to the frame so it can be converted on demand
       // (seeking decodes many frames and only shows the last one).
-      if (!impl_->last_frame) impl_->last_frame = av_frame_alloc();
+      if (!impl_->last_frame) {
+        impl_->last_frame = av_frame_alloc();
+      }
       av_frame_unref(impl_->last_frame);
       av_frame_ref(impl_->last_frame, frame);
 
@@ -216,7 +230,9 @@ bool FFmpegDecoder::DecodeNextFrame(DecodedFrame& out, bool convert) {
               : 0.0;
       out.width = width_;
       out.height = height_;
-      if (convert) ConvertFrame(frame, out);
+      if (convert) {
+        ConvertFrame(frame, out);
+      }
 
       frame_count_++;
       current_frame_++;
@@ -265,8 +281,10 @@ bool FFmpegDecoder::DecodeNextFrame(DecodedFrame& out, bool convert) {
 }
 
 bool FFmpegDecoder::DecodeKeyframes(std::vector<DecodedFrame>& out,
-                                     int max_frames) {
-  if (!impl_ || !impl_->codecCtx || !impl_->fmtCtx) return false;
+                                    int max_frames) {
+  if (!impl_ || !impl_->codecCtx || !impl_->fmtCtx) {
+    return false;
+  }
 
   int decoded = 0;
   DecodedFrame frame;
@@ -284,19 +302,25 @@ void FFmpegDecoder::reset() {
 }
 
 bool FFmpegDecoder::SeekToFrame(int target_index) {
-  if (!impl_ || !impl_->codecCtx || !impl_->fmtCtx) return false;
+  if (!impl_ || !impl_->codecCtx || !impl_->fmtCtx) {
+    return false;
+  }
   if (target_index <= 0) {
     reset();
     current_frame_ = 0;
     return true;
   }
-  if (target_index == current_frame_) return true;
+  if (target_index == current_frame_) {
+    return true;
+  }
 
   bool seek_attempted = false;
   if (!impl_->is_raw &&
       (target_index < current_frame_ || target_index > current_frame_ + 1)) {
     seek_attempted = true;
-    if (SeekByContainer(target_index)) return true;
+    if (SeekByContainer(target_index)) {
+      return true;
+    }
   }
 
   if (seek_attempted || target_index < current_frame_) {
@@ -305,17 +329,22 @@ bool FFmpegDecoder::SeekToFrame(int target_index) {
   }
   DecodedFrame dummy;
   while (current_frame_ < target_index) {
-    if (!DecodeNextFrame(dummy, false)) return false;
+    if (!DecodeNextFrame(dummy, false)) {
+      return false;
+    }
   }
   return true;
 }
 
 bool FFmpegDecoder::SeekByContainer(int target_index) {
   if (!impl_ || !impl_->fmtCtx || impl_->video_stream_idx < 0 ||
-      frame_rate_ <= 0.0)
+      frame_rate_ <= 0.0) {
     return false;
+  }
   AVStream* st = impl_->fmtCtx->streams[impl_->video_stream_idx];
-  if (!st || st->time_base.num <= 0 || st->time_base.den <= 0) return false;
+  if (!st || st->time_base.num <= 0 || st->time_base.den <= 0) {
+    return false;
+  }
 
   const int64_t target_pts =
       (int64_t)std::llround((double)target_index * st->time_base.den /
@@ -323,19 +352,24 @@ bool FFmpegDecoder::SeekByContainer(int target_index) {
 
   const int seek_ret = av_seek_frame(impl_->fmtCtx, impl_->video_stream_idx,
                                      target_pts, AVSEEK_FLAG_BACKWARD);
-  if (seek_ret < 0) return false;
+  if (seek_ret < 0) {
+    return false;
+  }
 
   avcodec_flush_buffers(impl_->codecCtx);
   // Drop any frames that were decoded but not consumed before the seek.
   AVFrame* stale = av_frame_alloc();
-  while (avcodec_receive_frame(impl_->codecCtx, stale) >= 0)
+  while (avcodec_receive_frame(impl_->codecCtx, stale) >= 0) {
     av_frame_unref(stale);
+  }
   av_frame_free(&stale);
   current_frame_ = 0;
 
   DecodedFrame f;
   while (DecodeNextFrame(f, false)) {
-    if (f.pts == AV_NOPTS_VALUE) return false;  // no container timestamps
+    if (f.pts == AV_NOPTS_VALUE) {
+      return false;
+    }  // no container timestamps
     if (f.pts >= target_pts) {
       ConvertFrame(impl_->last_frame, f);
       impl_->pending = f;

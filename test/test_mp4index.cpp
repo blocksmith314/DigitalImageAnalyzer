@@ -20,8 +20,9 @@ bool exists(const std::string& path) {
 }  // namespace
 
 TEST(Mp4IndexTest, ParsesStcoSampleTable) {
-  if (!exists(data_path("sample_720p.mp4")))
+  if (!exists(data_path("sample_720p.mp4"))) {
     GTEST_SKIP() << "MP4 fixture missing";
+  }
 
   BitstreamParser parser(CodecType::kH264);
   CodecType codec = CodecType::kH264;
@@ -43,8 +44,9 @@ TEST(Mp4IndexTest, ParsesStcoSampleTable) {
 }
 
 TEST(Mp4IndexTest, GroupsFramesAfterIndexImport) {
-  if (!exists(data_path("sample_720p.mp4")))
+  if (!exists(data_path("sample_720p.mp4"))) {
     GTEST_SKIP() << "MP4 fixture missing";
+  }
 
   BitstreamParser parser(CodecType::kH264);
   CodecType codec = CodecType::kH264;
@@ -59,7 +61,9 @@ TEST(Mp4IndexTest, GroupsFramesAfterIndexImport) {
 }
 
 TEST(Mp4IndexTest, ReportsDenseTableForFallback) {
-  if (!exists(data_path("sample.mp4"))) GTEST_SKIP() << "MP4 fixture missing";
+  if (!exists(data_path("sample.mp4"))) {
+    GTEST_SKIP() << "MP4 fixture missing";
+  }
 
   BitstreamParser parser(CodecType::kH264);
   CodecType codec = CodecType::kH264;
@@ -68,8 +72,9 @@ TEST(Mp4IndexTest, ReportsDenseTableForFallback) {
 }
 
 TEST(Mp4IndexTest, RejectsAnnexBStream) {
-  if (!exists(data_path("output.h264")))
+  if (!exists(data_path("output.h264"))) {
     GTEST_SKIP() << "sample stream missing";
+  }
 
   BitstreamParser parser(CodecType::kH264);
   CodecType codec = CodecType::kH264;

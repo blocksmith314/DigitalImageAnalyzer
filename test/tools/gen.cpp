@@ -75,7 +75,9 @@ static const uint8_t FONT5x7[][5] = {
 
 static void draw_char_y(uint8_t* y, int stride, int x, int y_pos, char c,
                         uint8_t value) {
-  if (c < 32 || c > 90) return;
+  if (c < 32 || c > 90) {
+    return;
+  }
   const uint8_t* glyph = FONT5x7[c - 32];
   for (int col = 0; col < 5; col++) {
     uint8_t mask = glyph[col];
@@ -93,7 +95,8 @@ static void draw_char_y(uint8_t* y, int stride, int x, int y_pos, char c,
 
 static void draw_text_yuv(AVFrame* frame, const char* text, int x, int y,
                           uint8_t yv, uint8_t u, uint8_t v, int scale) {
-  int w = frame->width, h = frame->height;
+  int w = frame->width;
+  int h = frame->height;
   int ystride = frame->linesize[0];
   int ustride = frame->linesize[1];
   for (const char* p = text; *p; p++) {
@@ -127,9 +130,11 @@ static void draw_text_yuv(AVFrame* frame, const char* text, int x, int y,
 }
 
 static void fill_checkerboard(AVFrame* frame, int tile) {
-  int w = frame->width, h = frame->height;
+  int w = frame->width;
+  int h = frame->height;
   int stride = frame->linesize[0];
-  int half_w = (w + 1) / 2, half_h = (h + 1) / 2;
+  int half_w = (w + 1) / 2;
+  int half_h = (h + 1) / 2;
   int ustride = frame->linesize[1];
 
   for (int y = 0; y < h; y++) {
@@ -150,7 +155,8 @@ static void fill_checkerboard(AVFrame* frame, int tile) {
 
 static void draw_filled_rect_yuv(AVFrame* frame, int x, int y, int w, int h,
                                  uint8_t yv, uint8_t u, uint8_t v) {
-  int fw = frame->width, fh = frame->height;
+  int fw = frame->width;
+  int fh = frame->height;
   int stride = frame->linesize[0];
   x = x < 0 ? 0 : x;
   y = y < 0 ? 0 : y;
@@ -163,12 +169,19 @@ static void draw_filled_rect_yuv(AVFrame* frame, int x, int y, int w, int h,
     }
   }
 
-  int half_w = (fw + 1) / 2, half_h = (fh + 1) / 2;
+  int half_w = (fw + 1) / 2;
+  int half_h = (fh + 1) / 2;
   int ustride = frame->linesize[1];
-  int cx1 = x / 2, cy1 = y / 2;
-  int cx2 = (x2 + 1) / 2, cy2 = (y2 + 1) / 2;
-  if (cx2 > half_w) cx2 = half_w;
-  if (cy2 > half_h) cy2 = half_h;
+  int cx1 = x / 2;
+  int cy1 = y / 2;
+  int cx2 = (x2 + 1) / 2;
+  int cy2 = (y2 + 1) / 2;
+  if (cx2 > half_w) {
+    cx2 = half_w;
+  }
+  if (cy2 > half_h) {
+    cy2 = half_h;
+  }
   for (int yy = cy1; yy < cy2; yy++) {
     for (int xx = cx1; xx < cx2; xx++) {
       frame->data[1][yy * ustride + xx] = u;
@@ -183,7 +196,9 @@ static void format_number(char* buf, int n, int width) {
   int len = (int)strlen(tmp);
   int pad = width - len;
   int pos = 0;
-  for (int i = 0; i < pad; i++) buf[pos++] = '0';
+  for (int i = 0; i < pad; i++) {
+    buf[pos++] = '0';
+  }
   memcpy(buf + pos, tmp, len);
   buf[pos + len] = '\0';
 }
@@ -220,7 +235,7 @@ int main(int argc, char** argv) {
   }
 
   int is_h265 = (strstr(codec_name, "265") != nullptr);
-  int codec_id = is_h265 ? AV_CODEC_ID_HEVC : AV_CODEC_ID_H264;
+  // int codec_id = is_h265 ? AV_CODEC_ID_HEVC : AV_CODEC_ID_H264;
 
   const AVCodec* codec = avcodec_find_encoder_by_name(codec_name);
   if (!codec) {
@@ -283,7 +298,9 @@ int main(int argc, char** argv) {
 
   if (avformat_write_header(fmt, nullptr) < 0) {
     fprintf(stderr, "failed to write header\n");
-    if (!(fmt->oformat->flags & AVFMT_NOFILE)) avio_closep(&fmt->pb);
+    if (!(fmt->oformat->flags & AVFMT_NOFILE)) {
+      avio_closep(&fmt->pb);
+    }
     avformat_free_context(fmt);
     avcodec_free_context(&enc);
     return 1;
@@ -300,7 +317,7 @@ int main(int argc, char** argv) {
   double box_w = 36;
   double box_h = 36;
   double margin = 20;
-  double total_duration = (double)total_frames / fps;
+  // double total_duration = (double)total_frames / fps;
   double start_x = margin;
   double end_x = width - margin - box_w;
   double y_center = height * 0.5;
@@ -320,7 +337,7 @@ int main(int argc, char** argv) {
     int ix = (int)box_x;
     int iy = (int)box_y;
 
-    uint8_t frame_num = (uint8_t)(200 + (f * 13) % 40);
+    // uint8_t frame_num = (uint8_t)(200 + (f * 13) % 40);
     draw_filled_rect_yuv(frame, ix, iy, (int)box_w, (int)box_h, 235, 80, 240);
 
     char pos[48];
@@ -371,7 +388,9 @@ int main(int argc, char** argv) {
 
   av_frame_free(&frame);
   av_packet_free(&pkt);
-  if (!(fmt->oformat->flags & AVFMT_NOFILE)) avio_closep(&fmt->pb);
+  if (!(fmt->oformat->flags & AVFMT_NOFILE)) {
+    avio_closep(&fmt->pb);
+  }
   avformat_free_context(fmt);
   avcodec_free_context(&enc);
 

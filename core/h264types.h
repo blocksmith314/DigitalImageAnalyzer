@@ -98,8 +98,10 @@ struct H264SliceHeader {
     return slice_type % 5 == 0 || slice_type % 5 == 3 || slice_type % 5 == 4;
   }
   char FrameTypeChar() const {
-    if (IsIFrame()) return 'I';
-    if (IsBFrame()) return 'B';
+    if (IsIFrame()) { return 'I';
+}
+    if (IsBFrame()) { return 'B';
+}
     return 'P';
   }
 };

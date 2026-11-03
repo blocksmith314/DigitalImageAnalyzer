@@ -9,7 +9,9 @@ TEST(SeiTest, ParsesUserDataUnregistered) {
   // start code + NAL header + payload type 5 + size 21 + UUID(16) + "hello" +
   // rbsp stop bit
   std::vector<uint8_t> data = {0x00, 0x00, 0x00, 0x01, 0x06, 0x05, 0x15};
-  for (int i = 0; i < 16; i++) data.push_back(static_cast<uint8_t>(i));
+  for (int i = 0; i < 16; i++) {
+    data.push_back(static_cast<uint8_t>(i));
+  }
   const char text[] = "hello";
   data.insert(data.end(), text, text + 5);
   data.push_back(0x80);
@@ -55,7 +57,9 @@ TEST(SeiTest, ParsesMultipleMessages) {
   // user_data_unregistered: type 5, size 21, UUID + "hello"
   data.push_back(0x05);
   data.push_back(0x15);
-  for (int i = 0; i < 16; i++) data.push_back(static_cast<uint8_t>(i));
+  for (int i = 0; i < 16; i++) {
+    data.push_back(static_cast<uint8_t>(i));
+  }
   const char text[] = "hello";
   data.insert(data.end(), text, text + 5);
   // recovery_point: type 6, size 1

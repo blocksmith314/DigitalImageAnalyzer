@@ -39,14 +39,14 @@ int main(int argc, char** argv) {
 
   int shown = 0;
   for (auto& nal : nals) {
-    if (nal.nal_type < 1 || nal.nal_type > 5) continue;
+    if (nal.nal_type < 1 || nal.nal_type > 5) {continue;}
     H264SliceHeader header;
     const bool ok =
         ParseH264SliceHeader(nal, parser.NalData(nal), sps, header);
     std::printf("  nal_type=%u ok=%d first_mb=%u frame_num=%u poc=%u\n",
                 nal.nal_type, ok, header.first_mb_in_slice, header.frame_num,
                 header.pic_order_cnt_lsb);
-    if (++shown >= 15) break;
+    if (++shown >= 15) {break;}
   }
   return 0;
 }

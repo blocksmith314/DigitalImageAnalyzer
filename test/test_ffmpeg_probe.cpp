@@ -21,7 +21,7 @@ bool exists(const std::string& path) {
 
 TEST(ProbeTest, DetectsRawAnnexB) {
   if (!exists(data_path("output.h264")))
-    GTEST_SKIP() << "sample stream missing";
+    {GTEST_SKIP() << "sample stream missing";}
 
   CodecType codec = CodecType::kH265;
   bool raw = false;
@@ -34,7 +34,7 @@ TEST(ProbeTest, DetectsRawAnnexB) {
 
 TEST(ProbeTest, DetectsContainer) {
   if (!exists(data_path("sample_720p.mp4")))
-    GTEST_SKIP() << "MP4 fixture missing";
+    {GTEST_SKIP() << "MP4 fixture missing";}
 
   CodecType codec = CodecType::kH265;
   bool raw = true;
@@ -56,7 +56,7 @@ TEST(ProbeTest, ReportsMissingFile) {
 
 TEST(AvccParserTest, ParsesMp4VideoTrack) {
   if (!exists(data_path("sample_720p.mp4")))
-    GTEST_SKIP() << "MP4 fixture missing";
+    {GTEST_SKIP() << "MP4 fixture missing";}
 
   BitstreamParser parser(CodecType::kH264);
   CodecType codec = CodecType::kH265;

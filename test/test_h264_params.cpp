@@ -19,7 +19,9 @@ bool sample_exists() {
 
 const NALUnit* firstOfType(const std::vector<NALUnit>& nals, uint8_t type) {
   for (const auto& nal : nals) {
-    if (nal.nal_type == type) return &nal;
+    if (nal.nal_type == type) {
+      return &nal;
+    }
   }
   return nullptr;
 }
@@ -33,7 +35,9 @@ NALAnalyzer analyzerFor(BitstreamParser& parser) {
 }  // namespace
 
 TEST(H264ParamsTest, ParsesSpsDetails) {
-  if (!sample_exists()) GTEST_SKIP() << "sample stream missing";
+  if (!sample_exists()) {
+    GTEST_SKIP() << "sample stream missing";
+  }
 
   BitstreamParser parser(CodecType::kH264);
   ASSERT_TRUE(parser.ParseFile(sample_path())) << parser.LastError();
@@ -50,7 +54,9 @@ TEST(H264ParamsTest, ParsesSpsDetails) {
 }
 
 TEST(H264ParamsTest, ParsesPpsDetails) {
-  if (!sample_exists()) GTEST_SKIP() << "sample stream missing";
+  if (!sample_exists()) {
+    GTEST_SKIP() << "sample stream missing";
+  }
 
   BitstreamParser parser(CodecType::kH264);
   ASSERT_TRUE(parser.ParseFile(sample_path())) << parser.LastError();
@@ -69,7 +75,9 @@ TEST(H264ParamsTest, ParsesPpsDetails) {
 }
 
 TEST(H264ParamsTest, CountsParameterSetsAndSlices) {
-  if (!sample_exists()) GTEST_SKIP() << "sample stream missing";
+  if (!sample_exists()) {
+    GTEST_SKIP() << "sample stream missing";
+  }
 
   BitstreamParser parser(CodecType::kH264);
   ASSERT_TRUE(parser.ParseFile(sample_path())) << parser.LastError();
@@ -89,7 +97,9 @@ TEST(H264ParamsTest, CountsParameterSetsAndSlices) {
 }
 
 TEST(H264ParamsTest, ParsesSliceHeadersInPocOrder) {
-  if (!sample_exists()) GTEST_SKIP() << "sample stream missing";
+  if (!sample_exists()) {
+    GTEST_SKIP() << "sample stream missing";
+  }
 
   BitstreamParser parser(CodecType::kH264);
   ASSERT_TRUE(parser.ParseFile(sample_path())) << parser.LastError();
@@ -112,12 +122,15 @@ TEST(H264ParamsTest, ParsesSliceHeadersInPocOrder) {
 
   size_t index = 0;
   for (const auto& nal : parser.NalUnits()) {
-    if (nal.nal_type < 1 || nal.nal_type > 5) continue;
-    if (index >= std::size(expected)) break;
+    if (nal.nal_type < 1 || nal.nal_type > 5) {
+      continue;
+    }
+    if (index >= std::size(expected)) {
+      break;
+    }
 
     H264SliceHeader header;
-    ASSERT_TRUE(
-        ParseH264SliceHeader(nal, parser.NalData(nal), sps, header));
+    ASSERT_TRUE(ParseH264SliceHeader(nal, parser.NalData(nal), sps, header));
     EXPECT_EQ(nal.nal_type, expected[index].nal_type);
     EXPECT_EQ(header.frame_num, expected[index].frame_num);
     EXPECT_EQ(header.pic_order_cnt_lsb, expected[index].poc_lsb);
@@ -127,7 +140,9 @@ TEST(H264ParamsTest, ParsesSliceHeadersInPocOrder) {
 }
 
 TEST(H264ParamsTest, AssignsDecodeAndDisplayOrder) {
-  if (!sample_exists()) GTEST_SKIP() << "sample stream missing";
+  if (!sample_exists()) {
+    GTEST_SKIP() << "sample stream missing";
+  }
 
   BitstreamParser parser(CodecType::kH264);
   ASSERT_TRUE(parser.ParseFile(sample_path())) << parser.LastError();
@@ -137,17 +152,23 @@ TEST(H264ParamsTest, AssignsDecodeAndDisplayOrder) {
 
   int reordered = 0;
   for (const auto& nal : parser.NalUnits()) {
-    if (nal.nal_type < 1 || nal.nal_type > 5) continue;
+    if (nal.nal_type < 1 || nal.nal_type > 5) {
+      continue;
+    }
     ASSERT_GE(nal.frame_index, 0);
     ASSERT_GE(nal.dts_index, 0);
     EXPECT_LT(nal.dts_index, (int)analyzer.stats().FrameCount);
-    if (nal.dts_index != nal.frame_index) reordered++;
+    if (nal.dts_index != nal.frame_index) {
+      reordered++;
+    }
   }
   EXPECT_GT(reordered, 0);  // the sample contains B frames
 }
 
 TEST(H264ParamsTest, BuildsSpsDetailsText) {
-  if (!sample_exists()) GTEST_SKIP() << "sample stream missing";
+  if (!sample_exists()) {
+    GTEST_SKIP() << "sample stream missing";
+  }
 
   BitstreamParser parser(CodecType::kH264);
   ASSERT_TRUE(parser.ParseFile(sample_path())) << parser.LastError();

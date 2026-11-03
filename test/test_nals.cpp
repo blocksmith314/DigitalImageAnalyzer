@@ -150,7 +150,9 @@ TEST(BitstreamParserTest, DetectsCodecFromAnnexBHeaders) {
 
 TEST(BitstreamParserTest, AutoDetectsHevcStream) {
   const std::string path = std::string(TEST_DATA_DIR) + "/output.h265";
-  if (!std::ifstream(path).good()) GTEST_SKIP() << "sample stream missing";
+  if (!std::ifstream(path).good()) {
+    GTEST_SKIP() << "sample stream missing";
+  }
 
   // Constructing as H.264 asks the parser to run codec detection.
   BitstreamParser parser(CodecType::kH264);

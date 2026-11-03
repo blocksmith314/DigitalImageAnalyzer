@@ -28,17 +28,17 @@ int main(int argc, char** argv) {
   std::printf("\n=== First 20 slice NALs ===\n");
   int shown = 0;
   for (auto& nal : nals) {
-    if (nal.nal_type < 1 || nal.nal_type > 5) continue;
+    if (nal.nal_type < 1 || nal.nal_type > 5) {continue;}
     std::printf("  offset=%llu frame_index=%d frame_type=%c nal_type=%u\n",
                 static_cast<unsigned long long>(nal.offset), nal.frame_index,
                 nal.frame_type ? nal.frame_type : '?', nal.nal_type);
-    if (++shown >= 20) break;
+    if (++shown >= 20) {break;}
   }
 
   std::printf("\n=== Grouped by frame_index ===\n");
   int current = -1;
   for (auto& nal : nals) {
-    if (nal.nal_type < 1 || nal.nal_type > 5) continue;
+    if (nal.nal_type < 1 || nal.nal_type > 5) {continue;}
     if (nal.frame_index != current) {
       current = nal.frame_index;
       std::printf("Frame idx=%d type=%c nal_type=%u\n", current,

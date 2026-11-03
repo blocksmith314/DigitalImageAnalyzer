@@ -22,19 +22,25 @@ uint64_t read_u64(const uint8_t* p) {
 
 // Iterates boxes inside [pos, end).
 bool next_box(const uint8_t* data, uint64_t end, uint64_t& pos, Box& box) {
-  if (pos + 8 > end) return false;
+  if (pos + 8 > end) {
+    return false;
+  }
   const uint8_t* p = data + pos;
   uint64_t size = read_u32(p);
   const uint32_t type = read_u32(p + 4);
   uint64_t header = 8;
   if (size == 1) {
-    if (pos + 16 > end) return false;
+    if (pos + 16 > end) {
+      return false;
+    }
     size = read_u64(p + 8);
     header = 16;
   } else if (size == 0) {
     size = end - pos;
   }
-  if (size < header || pos + size > end) return false;
+  if (size < header || pos + size > end) {
+    return false;
+  }
   box.type = type;
   box.offset = pos;
   box.size = size;
@@ -58,7 +64,9 @@ bool find_box(const uint8_t* data, uint64_t start, uint64_t end,
 bool append_extra_nal_unit(std::vector<NALUnit>& nals,
                            std::vector<uint8_t>& extra, uint64_t extra_base,
                            const uint8_t* data, int len, CodecType codec) {
-  if (len < 1) return false;
+  if (len < 1) {
+    return false;
+  }
   NALUnit nal;
   nal.codec = codec;
   nal.offset = extra_base + extra.size();
@@ -80,7 +88,9 @@ void appendExtradata(const uint8_t* ex, int size, CodecType codec,
                      std::vector<NALUnit>& nals, std::vector<uint8_t>& extra,
                      uint64_t extra_base, int& length_size) {
   length_size = 4;
-  if (!ex || size <= 5 || ex[0] != 1) return;
+  if (!ex || size <= 5 || ex[0] != 1) {
+    return;
+  }
 
   size_t pos;
   if (codec == CodecType::kH264) {
@@ -100,14 +110,18 @@ void appendExtradata(const uint8_t* ex, int size, CodecType codec,
         for (int i = 0; i < n2 && pos + 2 <= (size_t)size; i++) {
           const int len = (ex[pos] << 8) | ex[pos + 1];
           pos += 2;
-          if (len <= 0 || pos + len > (size_t)size) return;
+          if (len <= 0 || pos + len > (size_t)size) {
+            return;
+          }
           append_extra_nal_unit(nals, extra, extra_base, ex + pos, len, codec);
           pos += len;
         }
       }
     }
   } else {
-    if (size < 23) return;
+    if (size < 23) {
+      return;
+    }
     length_size = (ex[21] & 0x03) + 1;
     pos = 22;
     const int arrays = ex[pos++];
@@ -118,7 +132,9 @@ void appendExtradata(const uint8_t* ex, int size, CodecType codec,
       for (int i = 0; i < n && pos + 2 <= (size_t)size; i++) {
         const int len = (ex[pos] << 8) | ex[pos + 1];
         pos += 2;
-        if (len <= 0 || pos + len > (size_t)size) return;
+        if (len <= 0 || pos + len > (size_t)size) {
+          return;
+        }
         append_extra_nal_unit(nals, extra, extra_base, ex + pos, len, codec);
         pos += len;
       }
@@ -128,13 +144,14 @@ void appendExtradata(const uint8_t* ex, int size, CodecType codec,
 
 }  // namespace
 
-bool BitstreamParser::ParseMp4Indexed(const std::string& path,
-                                        CodecType& codec,
-                                        const ProgressFn& progress) {
+bool BitstreamParser::ParseMp4Indexed(const std::string& path, CodecType& codec,
+                                      const ProgressFn& progress) {
   ResetStorage();
   error_.clear();
 
-  if (!mapped_.open(path, error_)) return false;
+  if (!mapped_.open(path, error_)) {
+    return false;
+  }
   base_ = mapped_.data();
 
   const uint8_t* data = base_;
@@ -168,37 +185,49 @@ bool BitstreamParser::ParseMp4Indexed(const std::string& path,
     uint64_t pos = moov_body;
     Box box;
     while (next_box(data, moov_end, pos, box)) {
-      if (box.type == 0x7472616Bu) traks.push_back(box);  // 'trak'
+      if (box.type == 0x7472616Bu) {
+        traks.push_back(box);
+      }  // 'trak'
     }
   }
 
   for (const Box& trak : traks) {
     const uint64_t trak_end = trak.offset + trak.size;
     Box mdia;
-    if (!find_box(data, trak.offset + 8, trak_end, 0x6D646961u, mdia))
-      continue;  // 'mdia'
+    if (!find_box(data, trak.offset + 8, trak_end, 0x6D646961u, mdia)) {
+      continue;
+    }  // 'mdia'
 
     const uint64_t mdia_end = mdia.offset + mdia.size;
     // handler type must be 'vide'
     Box hdlr;
-    if (!find_box(data, mdia.offset + 8, mdia_end, 0x68646C72u, hdlr))
-      continue;  // 'hdlr'
-    if (hdlr.offset + 8 + 8 + 4 > file_size) continue;
-    if (read_u32(data + hdlr.offset + 16) != 0x76696465u) continue;  // 'vide'
+    if (!find_box(data, mdia.offset + 8, mdia_end, 0x68646C72u, hdlr)) {
+      continue;
+    }  // 'hdlr'
+    if (hdlr.offset + 8 + 8 + 4 > file_size) {
+      continue;
+    }
+    if (read_u32(data + hdlr.offset + 16) != 0x76696465u) {
+      continue;
+    }  // 'vide'
 
     Box minf;
-    if (!find_box(data, mdia.offset + 8, mdia_end, 0x6D696E66u, minf))
-      continue;  // 'minf'
+    if (!find_box(data, mdia.offset + 8, mdia_end, 0x6D696E66u, minf)) {
+      continue;
+    }  // 'minf'
     Box stbl;
     if (!find_box(data, minf.offset + 8, minf.offset + minf.size, 0x7374626Cu,
-                  stbl))
-      continue;  // 'stbl'
+                  stbl)) {
+      continue;
+    }  // 'stbl'
 
     const uint64_t stbl_end = stbl.offset + stbl.size;
-    if (!find_box(data, stbl.offset + 8, stbl_end, 0x7374737Au, stszBox))
-      continue;  // 'stsz'
-    if (!find_box(data, stbl.offset + 8, stbl_end, 0x73747363u, stscBox))
-      continue;  // 'stsc'
+    if (!find_box(data, stbl.offset + 8, stbl_end, 0x7374737Au, stszBox)) {
+      continue;
+    }  // 'stsz'
+    if (!find_box(data, stbl.offset + 8, stbl_end, 0x73747363u, stscBox)) {
+      continue;
+    }  // 'stsc'
     found_video = find_box(data, stbl.offset + 8, stbl_end, 0x73747364u,
                            stsdBox);  // 'stsd'
     if (!find_box(data, stbl.offset + 8, stbl_end, 0x7374636Fu,
@@ -208,7 +237,9 @@ bool BitstreamParser::ParseMp4Indexed(const std::string& path,
         found_video = false;
       }
     }
-    if (found_video) break;
+    if (found_video) {
+      break;
+    }
   }
 
   if (!found_video) {
@@ -282,14 +313,17 @@ bool BitstreamParser::ParseMp4Indexed(const std::string& path,
     }
     sizes.resize(sample_count);
     const uint8_t* tbl = stsz + 20;
-    for (uint32_t i = 0; i < sample_count; i++)
+    for (uint32_t i = 0; i < sample_count; i++) {
       sizes[i] = read_u32(tbl + 4 * i);
+    }
   }
 
   // With small (dense) samples the header pages cover the whole file anyway;
   // a sequential demux is faster in that case.
   uint64_t total_sample_bytes = 0;
-  for (uint32_t i = 0; i < sample_count; i++) total_sample_bytes += sizes[i];
+  for (uint32_t i = 0; i < sample_count; i++) {
+    total_sample_bytes += sizes[i];
+  }
   if (sample_count > 0 &&
       (double)total_sample_bytes / (double)sample_count < 4096.0) {
     error_ = "Dense sample table";
@@ -303,14 +337,16 @@ bool BitstreamParser::ParseMp4Indexed(const std::string& path,
     const uint8_t* p = data + stcoBox.offset;
     const uint32_t n = read_u32(p + 12);
     chunk_offsets.resize(n);
-    for (uint32_t i = 0; i < n; i++)
+    for (uint32_t i = 0; i < n; i++) {
       chunk_offsets[i] = read_u32(p + 16 + 4 * i);
+    }
   } else if (co64Box.size >= 16) {
     const uint8_t* p = data + co64Box.offset;
     const uint32_t n = read_u32(p + 12);
     chunk_offsets.resize(n);
-    for (uint32_t i = 0; i < n; i++)
+    for (uint32_t i = 0; i < n; i++) {
       chunk_offsets[i] = read_u64(p + 16 + 8 * i);
+    }
   }
   if (chunk_offsets.empty()) {
     error_ = "Missing chunk offsets";
@@ -350,8 +386,9 @@ bool BitstreamParser::ParseMp4Indexed(const std::string& path,
   for (uint32_t chunk = 0;
        chunk < chunk_offsets.size() && sample_idx < sample_count; chunk++) {
     while (stsc_idx + 1 < stsc.size() &&
-           stsc[stsc_idx + 1].first_chunk <= chunk + 1)
+           stsc[stsc_idx + 1].first_chunk <= chunk + 1) {
       stsc_idx++;
+    }
     uint64_t offset = chunk_offsets[chunk];
     const uint32_t per_chunk = stsc[stsc_idx].samples_per_chunk;
     for (uint32_t k = 0; k < per_chunk && sample_idx < sample_count;
@@ -359,15 +396,20 @@ bool BitstreamParser::ParseMp4Indexed(const std::string& path,
       const uint32_t sample_size = sizes[sample_idx];
       const uint64_t sample_start = offset;
       offset += sample_size;
-      if (sample_start + sample_size > file_size) break;
+      if (sample_start + sample_size > file_size) {
+        break;
+      }
 
       size_t rel = 0;
       while (rel + (size_t)length_size <= sample_size) {
         uint32_t nal_len = 0;
-        for (int bidx = 0; bidx < length_size; bidx++)
+        for (int bidx = 0; bidx < length_size; bidx++) {
           nal_len = (nal_len << 8) | data[sample_start + rel + bidx];
+        }
         rel += (size_t)length_size;
-        if (nal_len == 0 || rel + nal_len > sample_size) break;
+        if (nal_len == 0 || rel + nal_len > sample_size) {
+          break;
+        }
 
         const uint8_t* np = data + sample_start + rel;
         NALUnit nal;
@@ -404,6 +446,8 @@ bool BitstreamParser::ParseMp4Indexed(const std::string& path,
     ResetStorage();
     return false;
   }
-  if (progress) progress(1.0);
+  if (progress) {
+    progress(1.0);
+  }
   return true;
 }

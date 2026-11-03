@@ -45,8 +45,9 @@ class BitstreamParser {
   // mapping / buffer. Valid until the next parse or destruction.
   const uint8_t* NalData(const NALUnit& nal) const {
     const uint64_t mapped = mapped_.size();
-    if (mapped > 0 && nal.offset >= mapped)
+    if (mapped > 0 && nal.offset >= mapped) {
       return extra_.empty() ? nullptr : extra_.data() + (nal.offset - mapped);
+}
     return base_ ? base_ + nal.offset : nullptr;
   }
 

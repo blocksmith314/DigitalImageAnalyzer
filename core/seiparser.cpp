@@ -39,7 +39,8 @@ std::string hex_preview(const uint8_t* data, size_t len,
     std::snprintf(buf, sizeof(buf), "%02x", data[i]);
     out += buf;
   }
-  if (len > n) out += "...";
+  if (len > n) { out += "...";
+}
   return out;
 }
 
@@ -62,14 +63,17 @@ class PayloadReader {
 
   uint32_t bits(int n) {
     uint32_t v = 0;
-    for (int i = 0; i < n; i++) v = (v << 1) | next_bit();
+    for (int i = 0; i < n; i++) { v = (v << 1) | next_bit();
+}
     return v;
   }
 
   uint32_t ue() {
     int zeros = 0;
-    while (!eof() && next_bit() == 0 && zeros < 31) zeros++;
-    if (zeros >= 31) return 0;
+    while (!eof() && next_bit() == 0 && zeros < 31) { zeros++;
+}
+    if (zeros >= 31) { return 0;
+}
     return ((1u << zeros) - 1u) + (zeros ? bits(zeros) : 0u);
   }
 
@@ -77,7 +81,8 @@ class PayloadReader {
 
  private:
   uint32_t next_bit() {
-    if (byte_ >= Len) return 0;
+    if (byte_ >= Len) { return 0;
+}
     const uint32_t b = (Data[byte_] >> (7 - bit_)) & 1;
     if (++bit_ == 8) {
       bit_ = 0;
@@ -131,15 +136,19 @@ std::string decode_message(uint32_t type, const uint8_t* p, uint32_t size) {
       return buf;
     }
     case 137: {  // mastering_display_colour_volume
-      if (size < 24) return "(too short) " + hex_preview(p, size);
+      if (size < 24) { return "(too short) " + hex_preview(p, size);
+}
       PayloadReader r(p, size);
-      uint32_t px[3], py[3];
+      uint32_t px[3];
+      uint32_t py[3];
       for (int i = 0; i < 3; i++) {
         px[i] = r.bits(16);
         py[i] = r.bits(16);
       }
-      const uint32_t wx = r.bits(16), wy = r.bits(16);
-      const uint32_t max_l = r.bits(32), minL = r.bits(32);
+      const uint32_t wx = r.bits(16);
+      const uint32_t wy = r.bits(16);
+      const uint32_t max_l = r.bits(32);
+      const uint32_t minL = r.bits(32);
       std::snprintf(buf, sizeof(buf),
                     "R(%u,%u) G(%u,%u) B(%u,%u) white(%u,%u) max_luminance=%u "
                     "min_luminance=%u",
@@ -148,7 +157,8 @@ std::string decode_message(uint32_t type, const uint8_t* p, uint32_t size) {
       return buf;
     }
     case 144: {  // content_light_level_info
-      if (size < 4) return "(too short) " + hex_preview(p, size);
+      if (size < 4) { return "(too short) " + hex_preview(p, size);
+}
       PayloadReader r(p, size);
       const uint32_t max_cll = r.bits(16);
       const uint32_t max_fall = r.bits(16);
@@ -158,7 +168,8 @@ std::string decode_message(uint32_t type, const uint8_t* p, uint32_t size) {
       return buf;
     }
     case 147: {  // alternative_transfer_characteristics
-      if (size < 1) return "(empty)";
+      if (size < 1) { return "(empty)";
+}
       std::snprintf(buf, sizeof(buf), "preferred_transfer_characteristics=%u",
                     p[0]);
       return buf;
@@ -216,7 +227,8 @@ bool ParseSeiMessages(const NALUnit& nal, const uint8_t* data, bool h265,
                         std::vector<SeiMessage>& out) {
   const size_t header_len = h265 ? 2 : 1;
   const size_t start = nal.start_code_len + header_len;
-  if (!data || start >= nal.size) return false;
+  if (!data || start >= nal.size) { return false;
+}
 
   const std::string rbsp =
       strip_emulation_prevention(data + start, nal.size - start);
@@ -226,14 +238,16 @@ bool ParseSeiMessages(const NALUnit& nal, const uint8_t* data, bool h265,
   size_t i = 0;
   bool any = false;
   while (i < len) {
-    if (payloadData[i] == 0x80) break;  // RbspTrailingBits
+    if (payloadData[i] == 0x80) { break;  // RbspTrailingBits
+}
 
     uint32_t type = 0;
     while (i < len && payloadData[i] == 0xFF) {
       type += 255;
       i++;
     }
-    if (i >= len) break;
+    if (i >= len) { break;
+}
     type += payloadData[i++];
 
     uint32_t size = 0;
@@ -241,10 +255,12 @@ bool ParseSeiMessages(const NALUnit& nal, const uint8_t* data, bool h265,
       size += 255;
       i++;
     }
-    if (i >= len) break;
+    if (i >= len) { break;
+}
     size += payloadData[i++];
 
-    if (size > len - i) size = (uint32_t)(len - i);
+    if (size > len - i) { size = (uint32_t)(len - i);
+}
 
     SeiMessage msg;
     msg.type = type;

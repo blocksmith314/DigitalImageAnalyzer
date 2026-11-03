@@ -18,7 +18,9 @@ bool sample_exists() {
 
 const NALUnit* firstOfType(const std::vector<NALUnit>& nals, uint8_t type) {
   for (const auto& nal : nals) {
-    if (nal.nal_type == type) return &nal;
+    if (nal.nal_type == type) {
+      return &nal;
+    }
   }
   return nullptr;
 }
@@ -26,7 +28,9 @@ const NALUnit* firstOfType(const std::vector<NALUnit>& nals, uint8_t type) {
 }  // namespace
 
 TEST(H265ParamsTest, ParsesVps) {
-  if (!sample_exists()) GTEST_SKIP() << "sample stream missing";
+  if (!sample_exists()) {
+    GTEST_SKIP() << "sample stream missing";
+  }
 
   BitstreamParser parser(CodecType::kH265);
   ASSERT_TRUE(parser.ParseFile(sample_path())) << parser.LastError();
@@ -42,7 +46,9 @@ TEST(H265ParamsTest, ParsesVps) {
 }
 
 TEST(H265ParamsTest, ParsesPps) {
-  if (!sample_exists()) GTEST_SKIP() << "sample stream missing";
+  if (!sample_exists()) {
+    GTEST_SKIP() << "sample stream missing";
+  }
 
   BitstreamParser parser(CodecType::kH265);
   ASSERT_TRUE(parser.ParseFile(sample_path())) << parser.LastError();
@@ -57,7 +63,9 @@ TEST(H265ParamsTest, ParsesPps) {
 }
 
 TEST(H265ParamsTest, NamesIrapSlices) {
-  if (!sample_exists()) GTEST_SKIP() << "sample stream missing";
+  if (!sample_exists()) {
+    GTEST_SKIP() << "sample stream missing";
+  }
 
   BitstreamParser parser(CodecType::kH265);
   ASSERT_TRUE(parser.ParseFile(sample_path())) << parser.LastError();

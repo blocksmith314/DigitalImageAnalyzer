@@ -1,7 +1,5 @@
 #include "platformfile.h"
 
-#include <utility>
-
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -118,7 +116,9 @@ void MappedFile::close() {
   file_ = nullptr;
   mapping_ = nullptr;
 #else
-  if (mapping_) munmap(mapping_, (size_t)size_);
+  if (mapping_) {
+    munmap(mapping_, (size_t)size_);
+  }
   mapping_ = nullptr;
 #endif
   Data = nullptr;
@@ -126,7 +126,9 @@ void MappedFile::close() {
 }
 
 void MappedFile::ReleaseResidentPages() {
-  if (!Data || size_ == 0) return;
+  if (!Data || size_ == 0) {
+    return;
+  }
 #ifndef _WIN32
   madvise(mapping_, (size_t)size_, MADV_DONTNEED);
 #endif

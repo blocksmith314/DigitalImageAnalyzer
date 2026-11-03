@@ -36,9 +36,9 @@ struct Run {
 
 bool read_file(const std::string& path, std::vector<uint8_t>& out) {
   std::ifstream file(path, std::ios::binary | std::ios::ate);
-  if (!file) return false;
+  if (!file) {return false;}
   const std::streamsize size = file.tellg();
-  if (size <= 0) return false;
+  if (size <= 0) {return false;}
   out.resize(static_cast<size_t>(size));
   file.seekg(0);
   return static_cast<bool>(
@@ -115,9 +115,9 @@ int main(int argc, char** argv) {
   const std::string path = argv[2];
   int repeat = 5;
   for (int i = 3; i + 1 < argc; i++) {
-    if (std::strcmp(argv[i], "--repeat") == 0) repeat = std::atoi(argv[++i]);
+    if (std::strcmp(argv[i], "--repeat") == 0) {repeat = std::atoi(argv[++i]);}
   }
-  if (repeat <= 0) repeat = 1;
+  if (repeat <= 0) {repeat = 1;}
 
   std::vector<uint8_t> buffer;
   if (mode == "buffer" && !read_file(path, buffer)) {
@@ -144,7 +144,9 @@ int main(int argc, char** argv) {
     std::sort(values.begin(), values.end());
     return values[values.size() / 2];
   };
-  std::vector<double> parse_times, analyzeTimes, totalTimes;
+  std::vector<double> parse_times;
+  std::vector<double> analyzeTimes;
+  std::vector<double> totalTimes;
   for (const Run& run : runs) {
     parse_times.push_back(run.parse_ms);
     analyzeTimes.push_back(run.analyze_ms);

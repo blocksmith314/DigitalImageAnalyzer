@@ -1,6 +1,5 @@
 #include "audiodecoder.h"
 
-#include <algorithm>
 #include <cstring>
 
 extern "C" {
@@ -55,8 +54,9 @@ void AudioDecoder::Impl::initResampler() {
   av_channel_layout_default(&outLayout, out_channels);
 
   AVChannelLayout inLayout = frame->ch_layout;
-  if (inLayout.nb_channels <= 0)
+  if (inLayout.nb_channels <= 0) {
     av_channel_layout_copy(&inLayout, &ctx->ch_layout);
+  }
   const int in_rate =
       frame->sample_rate > 0 ? frame->sample_rate : ctx->sample_rate;
   const AVSampleFormat inFmt = frame->format >= 0
@@ -65,7 +65,9 @@ void AudioDecoder::Impl::initResampler() {
 
   swr_alloc_set_opts2(&swr, &outLayout, outFormat, out_rate, &inLayout, inFmt,
                       in_rate, 0, nullptr);
-  if (swr) swr_init(swr);
+  if (swr) {
+    swr_init(swr);
+  }
 }
 
 AudioDecoder::AudioDecoder() : impl_(new Impl()) {}
@@ -77,7 +79,9 @@ AudioDecoder::~AudioDecoder() {
 
 bool AudioDecoder::open(const std::string& path) {
   close();
-  if (!impl_) impl_ = new Impl();
+  if (!impl_) {
+    impl_ = new Impl();
+  }
 
   if (avformat_open_input(&impl_->fmt, path.c_str(), nullptr, nullptr) < 0) {
     close();
@@ -127,12 +131,24 @@ bool AudioDecoder::open(const std::string& path) {
 }
 
 void AudioDecoder::close() {
-  if (!impl_) return;
-  if (impl_->swr) swr_free(&impl_->swr);
-  if (impl_->frame) av_frame_free(&impl_->frame);
-  if (impl_->pkt) av_packet_free(&impl_->pkt);
-  if (impl_->ctx) avcodec_free_context(&impl_->ctx);
-  if (impl_->fmt) avformat_close_input(&impl_->fmt);
+  if (!impl_) {
+    return;
+  }
+  if (impl_->swr) {
+    swr_free(&impl_->swr);
+  }
+  if (impl_->frame) {
+    av_frame_free(&impl_->frame);
+  }
+  if (impl_->pkt) {
+    av_packet_free(&impl_->pkt);
+  }
+  if (impl_->ctx) {
+    avcodec_free_context(&impl_->ctx);
+  }
+  if (impl_->fmt) {
+    avformat_close_input(&impl_->fmt);
+  }
   *impl_ = Impl();
 }
 
@@ -149,12 +165,16 @@ int AudioDecoder::SourceChannels() const {
 }
 
 void AudioDecoder::SetOutputFormat(int sample_rate, int channels,
-                                     PcmFormat format) {
-  if (!impl_) return;
+                                   PcmFormat format) {
+  if (!impl_) {
+    return;
+  }
   impl_->out_rate = sample_rate > 0 ? sample_rate : 48000;
   impl_->out_channels = channels > 0 ? channels : 2;
   impl_->outFormat = toAv(format);
-  if (impl_->swr) swr_free(&impl_->swr);
+  if (impl_->swr) {
+    swr_free(&impl_->swr);
+  }
 }
 
 int AudioDecoder::OutputSampleRate() const {
@@ -166,7 +186,9 @@ int AudioDecoder::OutputChannels() const {
 }
 
 void AudioDecoder::SeekTo(double seconds) {
-  if (!IsOpen()) return;
+  if (!IsOpen()) {
+    return;
+  }
   AVStream* stream = impl_->fmt->streams[impl_->stream_idx];
   const int64_t timestamp =
       static_cast<int64_t>(seconds / av_q2d(stream->time_base));
@@ -175,17 +197,23 @@ void AudioDecoder::SeekTo(double seconds) {
     return;
   }
   avcodec_flush_buffers(impl_->ctx);
-  if (impl_->swr) swr_convert(impl_->swr, nullptr, 0, nullptr, 0);
+  if (impl_->swr) {
+    swr_convert(impl_->swr, nullptr, 0, nullptr, 0);
+  }
   impl_->eof = false;
   impl_->flushed = false;
 }
 
 int AudioDecoder::decode(uint8_t* out, int max_bytes) {
-  if (!IsOpen() || !out || max_bytes <= 0) return 0;
+  if (!IsOpen() || !out || max_bytes <= 0) {
+    return 0;
+  }
 
   const int bytes_per_frame =
       impl_->out_channels * av_get_bytes_per_sample(impl_->outFormat);
-  if (bytes_per_frame <= 0) return 0;
+  if (bytes_per_frame <= 0) {
+    return 0;
+  }
 
   int written = 0;
   while (written + bytes_per_frame <= max_bytes) {
@@ -197,7 +225,9 @@ int AudioDecoder::decode(uint8_t* out, int max_bytes) {
         uint8_t* dst = out + written;
         const int converted =
             swr_convert(impl_->swr, &dst, max_frames, nullptr, 0);
-        if (converted <= 0) break;
+        if (converted <= 0) {
+          break;
+        }
         written += converted * bytes_per_frame;
         continue;
       }
@@ -225,9 +255,13 @@ int AudioDecoder::decode(uint8_t* out, int max_bytes) {
       av_packet_unref(impl_->pkt);
       continue;
     }
-    if (ret < 0) break;
+    if (ret < 0) {
+      break;
+    }
 
-    if (!impl_->swr) impl_->initResampler();
+    if (!impl_->swr) {
+      impl_->initResampler();
+    }
     const int max_frames = (max_bytes - written) / bytes_per_frame;
     uint8_t* dst = out + written;
     const int converted =
@@ -235,7 +269,9 @@ int AudioDecoder::decode(uint8_t* out, int max_bytes) {
                     const_cast<const uint8_t**>(impl_->frame->extended_data),
                     impl_->frame->nb_samples);
     av_frame_unref(impl_->frame);
-    if (converted <= 0) break;
+    if (converted <= 0) {
+      break;
+    }
     written += converted * bytes_per_frame;
   }
   return written;

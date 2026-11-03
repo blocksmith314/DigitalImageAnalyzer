@@ -44,18 +44,18 @@ struct BitWriter {
   int bits = 0;
 
   void put(bool bit) {
-    if (bits % 8 == 0) bytes.push_back(0);
-    if (bit) bytes.back() |= static_cast<uint8_t>(1u << (7 - bits % 8));
+    if (bits % 8 == 0) {bytes.push_back(0);}
+    if (bit) {bytes.back() |= static_cast<uint8_t>(1u << (7 - bits % 8));}
     bits++;
   }
   void putBits(uint64_t value, int count) {
-    for (int i = count - 1; i >= 0; i--) put(((value >> i) & 1u) != 0);
+    for (int i = count - 1; i >= 0; i--) {put(((value >> i) & 1u) != 0);}
   }
   void putUe(uint64_t value) {
     const uint64_t v = value + 1;
     int length = 0;
-    for (uint64_t t = v; t; t >>= 1) length++;
-    for (int i = 0; i < length - 1; i++) put(false);
+    for (uint64_t t = v; t; t >>= 1) {length++;}
+    for (int i = 0; i < length - 1; i++) {put(false);}
     putBits(v, length);
   }
 };
@@ -65,10 +65,10 @@ struct BitWriter {
 TEST(BitReaderTest, DecodesLongExpGolombValues) {
   const uint64_t values[] = {0, 1, 2, 3, 7, 8, 1000, 65535};
   BitWriter writer;
-  for (uint64_t v : values) writer.putUe(v);
+  for (uint64_t v : values) {writer.putUe(v);}
 
   BitReader reader(writer.bytes.data(), writer.bytes.size());
-  for (uint64_t v : values) EXPECT_EQ(reader.ReadUe(), v);
+  for (uint64_t v : values) {EXPECT_EQ(reader.ReadUe(), v);}
 }
 
 TEST(BitReaderTest, DecodesSignedExpGolombRange) {
@@ -81,7 +81,7 @@ TEST(BitReaderTest, DecodesSignedExpGolombRange) {
   }
 
   BitReader reader(writer.bytes.data(), writer.bytes.size());
-  for (int64_t v : values) EXPECT_EQ(reader.ReadSe(), v);
+  for (int64_t v : values) {EXPECT_EQ(reader.ReadSe(), v);}
 }
 
 TEST(BitReaderTest, DetectsRbspTrailingBits) {

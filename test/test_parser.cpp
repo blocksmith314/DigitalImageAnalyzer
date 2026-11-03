@@ -23,7 +23,9 @@ bool file_exists(const std::string& path) {
 const NALUnit* firstOfType(const std::vector<NALUnit>& nals, CodecType codec,
                            uint8_t type) {
   for (const auto& nal : nals) {
-    if (nal.codec == codec && nal.nal_type == type) return &nal;
+    if (nal.codec == codec && nal.nal_type == type) {
+      return &nal;
+    }
   }
   return nullptr;
 }
@@ -31,8 +33,9 @@ const NALUnit* firstOfType(const std::vector<NALUnit>& nals, CodecType codec,
 }  // namespace
 
 TEST(BitstreamParserTest, ParsesH264Sample) {
-  if (!file_exists(sample_path("output.h264")))
+  if (!file_exists(sample_path("output.h264"))) {
     GTEST_SKIP() << "sample stream missing";
+  }
 
   BitstreamParser parser(CodecType::kH264);
   ASSERT_TRUE(parser.ParseFile(sample_path("output.h264")))
@@ -51,13 +54,16 @@ TEST(BitstreamParserTest, ParsesH264Sample) {
     EXPECT_EQ(nals[i].codec, CodecType::kH264);
     EXPECT_GT(nals[i].size, 0u);
     EXPECT_NE(parser.NalData(nals[i]), nullptr);
-    if (i > 0) EXPECT_GT(nals[i].offset, nals[i - 1].offset);
+    if (i > 0) {
+      EXPECT_GT(nals[i].offset, nals[i - 1].offset);
+    }
   }
 }
 
 TEST(BitstreamParserTest, ParsesH264Sps) {
-  if (!file_exists(sample_path("output.h264")))
+  if (!file_exists(sample_path("output.h264"))) {
     GTEST_SKIP() << "sample stream missing";
+  }
 
   BitstreamParser parser(CodecType::kH264);
   ASSERT_TRUE(parser.ParseFile(sample_path("output.h264")))
@@ -78,8 +84,9 @@ TEST(BitstreamParserTest, ParsesH264Sps) {
 }
 
 TEST(NALAnalyzerTest, GroupsH264Frames) {
-  if (!file_exists(sample_path("output.h264")))
+  if (!file_exists(sample_path("output.h264"))) {
     GTEST_SKIP() << "sample stream missing";
+  }
 
   BitstreamParser parser(CodecType::kH264);
   ASSERT_TRUE(parser.ParseFile(sample_path("output.h264")))
@@ -100,8 +107,9 @@ TEST(NALAnalyzerTest, GroupsH264Frames) {
 }
 
 TEST(BitstreamParserTest, ParsesH265Sample) {
-  if (!file_exists(sample_path("output.h265")))
+  if (!file_exists(sample_path("output.h265"))) {
     GTEST_SKIP() << "sample stream missing";
+  }
 
   BitstreamParser parser(CodecType::kH265);
   ASSERT_TRUE(parser.ParseFile(sample_path("output.h265")))
@@ -110,12 +118,20 @@ TEST(BitstreamParserTest, ParsesH265Sample) {
   const auto& nals = parser.NalUnits();
   ASSERT_EQ(nals.size(), 216u);
 
-  int vps = 0, sps = 0, pps = 0;
+  int vps = 0;
+  int sps = 0;
+  int pps = 0;
   for (const auto& nal : nals) {
     EXPECT_EQ(nal.codec, CodecType::kH265);
-    if (nal.nal_type == 32) vps++;
-    if (nal.nal_type == 33) sps++;
-    if (nal.nal_type == 34) pps++;
+    if (nal.nal_type == 32) {
+      vps++;
+    }
+    if (nal.nal_type == 33) {
+      sps++;
+    }
+    if (nal.nal_type == 34) {
+      pps++;
+    }
   }
   EXPECT_EQ(vps, 24);
   EXPECT_EQ(sps, 24);

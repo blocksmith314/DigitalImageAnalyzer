@@ -129,8 +129,10 @@ struct H265SliceSegmentHeader {
   bool poc_valid = false;
 
   char FrameTypeChar() const {
-    if (is_irap || slice_type == 2) return 'I';
-    if (slice_type == 0) return 'B';
+    if (is_irap || slice_type == 2) { return 'I';
+}
+    if (slice_type == 0) { return 'B';
+}
     return 'P';
   }
 };

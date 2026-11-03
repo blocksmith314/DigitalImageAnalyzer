@@ -78,11 +78,13 @@ CodecType BitstreamParser::DetectCodec(const uint8_t* data, size_t len) {
                data[i + 2] == 0x00 && data[i + 3] == 0x01) {
       header = i + 4;
     }
-    if (header == SIZE_MAX || header >= len || header == last_header) continue;
+    if (header == SIZE_MAX || header >= len || header == last_header) { continue;
+}
     last_header = header;
 
     const uint8_t byte = data[header];
-    if (byte & 0x80) continue;  // forbidden_zero_bit must be zero
+    if (byte & 0x80) { continue;  // forbidden_zero_bit must be zero
+}
 
     const uint8_t h264_type = byte & 0x1F;
     const uint8_t h265_type = (byte >> 1) & 0x3F;
@@ -100,7 +102,8 @@ CodecType BitstreamParser::DetectCodec(const uint8_t* data, size_t len) {
     inspected++;
   }
 
-  if (h265_score > h264_score) return CodecType::kH265;
+  if (h265_score > h264_score) { return CodecType::kH265;
+}
   return CodecType::kH264;
 }
 bool BitstreamParser::ParseFile(const std::string& path,
@@ -108,7 +111,8 @@ bool BitstreamParser::ParseFile(const std::string& path,
   ResetStorage();
   error_.clear();
 
-  if (!mapped_.open(path, error_)) return false;
+  if (!mapped_.open(path, error_)) { return false;
+}
   base_ = mapped_.data();
   return scan(base_, (size_t)mapped_.size(), progress);
 }
@@ -156,8 +160,10 @@ bool BitstreamParser::scan(const uint8_t* data, size_t len,
       next_report = current_start + report_step;
     }
     size_t search_from = current_start + current_sc_len;
-    if (codec_ == CodecType::kH264 && search_from < len) search_from += 1;
-    if (codec_ == CodecType::kH265 && search_from < len) search_from += 2;
+    if (codec_ == CodecType::kH264 && search_from < len) { search_from += 1;
+}
+    if (codec_ == CodecType::kH265 && search_from < len) { search_from += 2;
+}
 
     uint8_t next_sc_len = 0;
     int64_t next_start = -1;
@@ -191,7 +197,8 @@ bool BitstreamParser::scan(const uint8_t* data, size_t len,
 
     nals_.push_back(nal);
 
-    if (next_start < 0) break;
+    if (next_start < 0) { break;
+}
     current_start = (size_t)next_start;
     current_sc_len = next_sc_len;
   }
@@ -200,7 +207,7 @@ bool BitstreamParser::scan(const uint8_t* data, size_t len,
 }
 
 // NAL type name mappings
-static const char* h264_nal_names[] = {
+static const char* const h264_nal_names[] = {
     "UNSPECIFIED", "NON_IDR_SLICE", "PART_A",   "PART_B",   "PART_C",
     "IDR_SLICE",   "SEI",           "SPS",      "PPS",      "AUD",
     "EOSSEQ",      "EOSTREAM",      "FILLER",   "SPSEXT",   "RESERVED",
@@ -209,7 +216,7 @@ static const char* h264_nal_names[] = {
     "RESERVED",    "RESERVED",      "RESERVED", "RESERVED", "RESERVED",
     "RESERVED"};
 
-static const char* h265_nal_names[] = {
+static const char* const h265_nal_names[] = {
     "TRAIL_N",
     "TRAIL_R",
     "TSA_N",
@@ -262,12 +269,14 @@ static const char* h265_nal_names[] = {
 
 std::string NALUnit::TypeName() const {
   if (codec == CodecType::kH264) {
-    if (nal_type <= 30) return h264_nal_names[nal_type];
+    if (nal_type <= 30) { return h264_nal_names[nal_type];
+}
     return "RESERVED";
   }
   constexpr size_t k_h265_name_count =
       sizeof(h265_nal_names) / sizeof(h265_nal_names[0]);
-  if (nal_type < k_h265_name_count) return h265_nal_names[nal_type];
+  if (nal_type < k_h265_name_count) { return h265_nal_names[nal_type];
+}
   return "UNSPECIFIED";
 }
 

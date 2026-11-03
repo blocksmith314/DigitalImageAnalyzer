@@ -31,20 +31,20 @@ bool exists(const std::string& path) {
 
 QLabel* frameLabel(MainWindow& window) {
   for (QLabel* label : window.findChildren<QLabel*>()) {
-    if (label->text().startsWith("Frame:")) return label;
+    if (label->text().startsWith("Frame:")) {return label;}
   }
   return nullptr;
 }
 
 QPushButton* buttonWithText(MainWindow& window, const QString& text) {
   for (QPushButton* button : window.findChildren<QPushButton*>()) {
-    if (button->text() == text) return button;
+    if (button->text() == text) {return button;}
   }
   return nullptr;
 }
 
 QPushButton* playButton(MainWindow& window) {
-  if (QPushButton* pause = buttonWithText(window, "Pause")) return pause;
+  if (QPushButton* pause = buttonWithText(window, "Pause")) {return pause;}
   return buttonWithText(window, "Play");
 }
 
@@ -62,7 +62,7 @@ QWidget* fullscreenWindow(MainWindow& window) {
 
 TEST(NalListModelTest, ReportsMetadata) {
   if (!exists(data_path("output.h264")))
-    GTEST_SKIP() << "sample stream missing";
+    {GTEST_SKIP() << "sample stream missing";}
 
   BitstreamParser parser(CodecType::kH264);
   ASSERT_TRUE(parser.ParseFile(data_path("output.h264")))
@@ -89,7 +89,7 @@ TEST(NalListModelTest, ReportsMetadata) {
 
 TEST(NalListModelTest, MapsFramesToRows) {
   if (!exists(data_path("output.h264")))
-    GTEST_SKIP() << "sample stream missing";
+    {GTEST_SKIP() << "sample stream missing";}
 
   BitstreamParser parser(CodecType::kH264);
   ASSERT_TRUE(parser.ParseFile(data_path("output.h264")))
@@ -110,7 +110,7 @@ TEST(NalListModelTest, MapsFramesToRows) {
 
 TEST(NalListModelTest, HighlightEmitsOnlyWhenFrameChanges) {
   if (!exists(data_path("output.h264")))
-    GTEST_SKIP() << "sample stream missing";
+    {GTEST_SKIP() << "sample stream missing";}
 
   BitstreamParser parser(CodecType::kH264);
   ASSERT_TRUE(parser.ParseFile(data_path("output.h264")))
@@ -135,7 +135,7 @@ TEST(NalListModelTest, HighlightEmitsOnlyWhenFrameChanges) {
 
 TEST(MainWindowTest, LoadsFileAndUpdatesViews) {
   if (!exists(data_path("sample_720p.mp4")))
-    GTEST_SKIP() << "MP4 fixture missing";
+    {GTEST_SKIP() << "MP4 fixture missing";}
 
   MainWindow window;
   window.show();
@@ -162,14 +162,14 @@ TEST(MainWindowTest, LoadsFileAndUpdatesViews) {
 
   bool status_has_nal_count = false;
   for (QLabel* statusLabel : window.statusBar()->findChildren<QLabel*>()) {
-    if (statusLabel->text().contains("NAL units")) status_has_nal_count = true;
+    if (statusLabel->text().contains("NAL units")) {status_has_nal_count = true;}
   }
   EXPECT_TRUE(status_has_nal_count);
 }
 
 TEST(MainWindowTest, StepForwardUsesSpinBoxValue) {
   if (!exists(data_path("sample_720p.mp4")))
-    GTEST_SKIP() << "MP4 fixture missing";
+    {GTEST_SKIP() << "MP4 fixture missing";}
 
   MainWindow window;
   window.show();
@@ -195,7 +195,7 @@ TEST(MainWindowTest, StepForwardUsesSpinBoxValue) {
 
 TEST(MainWindowTest, SpaceTogglesPlayback) {
   if (!exists(data_path("sample_720p.mp4")))
-    GTEST_SKIP() << "MP4 fixture missing";
+    {GTEST_SKIP() << "MP4 fixture missing";}
 
   MainWindow window;
   window.show();
@@ -216,7 +216,7 @@ TEST(MainWindowTest, SpaceTogglesPlayback) {
 
 TEST(MainWindowTest, BothPanelsHaveEqualWidth) {
   if (!exists(data_path("sample_720p.mp4")))
-    GTEST_SKIP() << "MP4 fixture missing";
+    {GTEST_SKIP() << "MP4 fixture missing";}
 
   MainWindow window;
   window.show();
@@ -226,7 +226,7 @@ TEST(MainWindowTest, BothPanelsHaveEqualWidth) {
 
   QList<QSplitter*> horizontal;
   for (QSplitter* splitter : window.findChildren<QSplitter*>()) {
-    if (splitter->orientation() == Qt::Horizontal) horizontal.append(splitter);
+    if (splitter->orientation() == Qt::Horizontal) {horizontal.append(splitter);}
   }
   ASSERT_EQ(horizontal.size(), 2);
   EXPECT_EQ(horizontal[0]->sizes(), horizontal[1]->sizes());
@@ -234,7 +234,7 @@ TEST(MainWindowTest, BothPanelsHaveEqualWidth) {
 
 TEST(MainWindowTest, DoubleClickEntersFullscreenAndEscapeLeaves) {
   if (!exists(data_path("sample_720p.mp4")))
-    GTEST_SKIP() << "MP4 fixture missing";
+    {GTEST_SKIP() << "MP4 fixture missing";}
 
   MainWindow window;
   window.show();
@@ -244,7 +244,7 @@ TEST(MainWindowTest, DoubleClickEntersFullscreenAndEscapeLeaves) {
 
   QLabel* video = nullptr;
   for (QLabel* label : window.findChildren<QLabel*>()) {
-    if (label->toolTip().contains("fullscreen")) video = label;
+    if (label->toolTip().contains("fullscreen")) {video = label;}
   }
   ASSERT_NE(video, nullptr);
 
