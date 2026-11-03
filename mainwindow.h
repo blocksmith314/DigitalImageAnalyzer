@@ -29,8 +29,8 @@ class QSplitter;
 class MainWindow : public QMainWindow {
   Q_OBJECT
  public:
-  MainWindow(QWidget* parent = nullptr);
-  ~MainWindow();
+  explicit MainWindow(QWidget* parent = nullptr);
+  ~MainWindow() override;
 
   // Load a file programmatically (same path as File > Open).
   bool LoadFile(const QString& path);

@@ -19,7 +19,7 @@ class AudioDecoder {
   AudioDecoder& operator=(const AudioDecoder&) = delete;
 
   AudioDecoder(AudioDecoder&& other) noexcept;
-    AudioDecoder& operator=(AudioDecoder&& other) noexcept;
+  AudioDecoder& operator=(AudioDecoder&& other) noexcept;
 
   bool open(const std::string& path);
   void close();

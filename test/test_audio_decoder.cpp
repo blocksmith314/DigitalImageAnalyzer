@@ -20,8 +20,9 @@ bool exists(const std::string& path) {
 }  // namespace
 
 TEST(AudioDecoderTest, OpensAudioStream) {
-  if (!exists(data_path("sample_av.mp4")))
-    {GTEST_SKIP() << "audio fixture missing";}
+  if (!exists(data_path("sample_av.mp4"))) {
+    GTEST_SKIP() << "audio fixture missing";
+  }
 
   AudioDecoder decoder;
   ASSERT_TRUE(decoder.open(data_path("sample_av.mp4")));
@@ -31,8 +32,9 @@ TEST(AudioDecoderTest, OpensAudioStream) {
 }
 
 TEST(AudioDecoderTest, RejectsVideoOnlyFile) {
-  if (!exists(data_path("output.h264")))
-    {GTEST_SKIP() << "sample stream missing";}
+  if (!exists(data_path("output.h264"))) {
+    GTEST_SKIP() << "sample stream missing";
+  }
 
   AudioDecoder decoder;
   EXPECT_FALSE(decoder.open(data_path("output.h264")));
@@ -40,8 +42,9 @@ TEST(AudioDecoderTest, RejectsVideoOnlyFile) {
 }
 
 TEST(AudioDecoderTest, DecodesOneSecondOfPcm) {
-  if (!exists(data_path("sample_av.mp4")))
-    {GTEST_SKIP() << "audio fixture missing";}
+  if (!exists(data_path("sample_av.mp4"))) {
+    GTEST_SKIP() << "audio fixture missing";
+  }
 
   AudioDecoder decoder;
   ASSERT_TRUE(decoder.open(data_path("sample_av.mp4")));
@@ -51,7 +54,9 @@ TEST(AudioDecoderTest, DecodesOneSecondOfPcm) {
   long long total = 0;
   for (int guard = 0; guard < 1000; guard++) {
     const int n = decoder.decode(buffer.data(), (int)buffer.size());
-    if (n <= 0) {break;}
+    if (n <= 0) {
+      break;
+    }
     total += n;
   }
   // 1 s of 48 kHz stereo kS16 is 192000 bytes; AAC priming adds a little.
@@ -60,8 +65,9 @@ TEST(AudioDecoderTest, DecodesOneSecondOfPcm) {
 }
 
 TEST(AudioDecoderTest, SeekRestartsDecoding) {
-  if (!exists(data_path("sample_av.mp4")))
-    {GTEST_SKIP() << "audio fixture missing";}
+  if (!exists(data_path("sample_av.mp4"))) {
+    GTEST_SKIP() << "audio fixture missing";
+  }
 
   AudioDecoder decoder;
   ASSERT_TRUE(decoder.open(data_path("sample_av.mp4")));

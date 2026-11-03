@@ -74,12 +74,17 @@ echo "clang-tidy: $TIDY"
 "$TIDY" --version | head -1
 echo "checking ${#SELECTED[@]} file(s) with $BUILD_DIR/compile_commands.json"
 
-ARGS=(-p "$BUILD_DIR")
+ARGS=(-p "$BUILD_DIR" --quiet)
 [ "$FIX" = "1" ] && ARGS+=(--fix)
-if "$TIDY" "${ARGS[@]}" "${SELECTED[@]}" 2>&1 | tee /tmp/dia_tidy.log; then
+if "$TIDY" "${ARGS[@]}" "${SELECTED[@]}" 2>&1 | sed -E '/^\[[0-9]+\/[0-9]+\] /d' | tee /tmp/dia_tidy.log; then
     :
 fi
-ISSUES=$(grep -cE "warning:|error:" /tmp/dia_tidy.log || true)
+ISSUES=$(grep -cE "\.(cpp|h):[0-9]+:[0-9]+: (warning|error):" /tmp/dia_tidy.log || true)
 echo
 echo "issues: $ISSUES (full log: /tmp/dia_tidy.log)"
+if [ "$ISSUES" -gt 0 ]; then
+    echo "by check:"
+    grep -E "\.(cpp|h):[0-9]+:[0-9]+: (warning|error):" /tmp/dia_tidy.log \
+        | grep -oE '\[[a-zA-Z0-9_.-]+\]$' | sort | uniq -c | sort -rn
+fi
 [ "$ISSUES" -eq 0 ]

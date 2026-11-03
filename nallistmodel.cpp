@@ -51,21 +51,28 @@ void NalListModel::SetNalUnits(const std::vector<NALUnit>* nals) {
 
   int max_frame = -1;
   if (nals_) {
-    for (const auto& nal : *nals_)
-      if (nal.frame_index > max_frame) max_frame = nal.frame_index;
+    for (const auto& nal : *nals_) {
+      if (nal.frame_index > max_frame) {
+        max_frame = nal.frame_index;
+      }
+    }
   }
   frame_start_.assign((size_t)max_frame + 1, -1);
   if (nals_) {
     for (int row = 0; row < (int)nals_->size(); row++) {
       const int f = (*nals_)[row].frame_index;
-      if (f >= 0 && frame_start_[(size_t)f] < 0) frame_start_[(size_t)f] = row;
+      if (f >= 0 && frame_start_[(size_t)f] < 0) {
+        frame_start_[(size_t)f] = row;
+      }
     }
   }
   endResetModel();
 }
 
 void NalListModel::SetHighlightedFrame(int frame_index) {
-  if (highlighted_frame_ == frame_index) return;
+  if (highlighted_frame_ == frame_index) {
+    return;
+  }
   const int old = highlighted_frame_;
   highlighted_frame_ = frame_index;
   if (nals_ && !nals_->empty()) {
@@ -77,12 +84,16 @@ void NalListModel::SetHighlightedFrame(int frame_index) {
 }
 
 int NalListModel::FirstRowForFrame(int frame_index) const {
-  if (frame_index < 0 || (size_t)frame_index >= frame_start_.size()) return -1;
+  if (frame_index < 0 || (size_t)frame_index >= frame_start_.size()) {
+    return -1;
+  }
   return frame_start_[(size_t)frame_index];
 }
 
 int NalListModel::rowCount(const QModelIndex& parent) const {
-  if (parent.isValid() || !nals_) return 0;
+  if (parent.isValid() || !nals_) {
+    return 0;
+  }
   return (int)nals_->size();
 }
 
@@ -91,9 +102,13 @@ int NalListModel::columnCount(const QModelIndex& parent) const {
 }
 
 QVariant NalListModel::data(const QModelIndex& index, int role) const {
-  if (!nals_ || !index.isValid()) return {};
+  if (!nals_ || !index.isValid()) {
+    return {};
+  }
   const int row = index.row();
-  if (row < 0 || row >= (int)nals_->size()) return {};
+  if (row < 0 || row >= (int)nals_->size()) {
+    return {};
+  }
   const NALUnit& nal = (*nals_)[(size_t)row];
 
   if (role == Qt::DisplayRole) {
@@ -122,8 +137,9 @@ QVariant NalListModel::data(const QModelIndex& index, int role) const {
   }
 
   if (role == Qt::BackgroundRole) {
-    if (nal.frame_index >= 0 && nal.frame_index == highlighted_frame_)
+    if (nal.frame_index >= 0 && nal.frame_index == highlighted_frame_) {
       return QColor(255, 165, 30);
+    }
     const QColor color = color_for(nal);
     // Return a null QVariant (not an invalid QColor) so the view keeps its
     // default background instead of painting the row black.
@@ -157,7 +173,9 @@ QVariant NalListModel::data(const QModelIndex& index, int role) const {
 
 QVariant NalListModel::headerData(int section, Qt::Orientation orientation,
                                   int role) const {
-  if (role != Qt::DisplayRole || orientation != Qt::Horizontal) return {};
+  if (role != Qt::DisplayRole || orientation != Qt::Horizontal) {
+    return {};
+  }
   switch (section) {
     case 0:
       return "#";

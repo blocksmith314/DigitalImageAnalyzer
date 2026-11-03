@@ -179,7 +179,11 @@ bool BitstreamParser::ParseMp4Indexed(const std::string& path, CodecType& codec,
   const uint64_t moov_end = moov.offset + moov.size;
   const uint64_t moov_body = moov.offset + 8;
   bool found_video = false;
-  Box stszBox, stcoBox, co64Box, stscBox, stsdBox;
+  Box stszBox;
+  Box stcoBox;
+  Box co64Box;
+  Box stscBox;
+  Box stsdBox;
   std::vector<Box> traks;
   {
     uint64_t pos = moov_body;

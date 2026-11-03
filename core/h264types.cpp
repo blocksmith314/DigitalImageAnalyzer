@@ -98,7 +98,7 @@ static void parseVui(BitReader& br, H264SPS& out) {
   }
   if (br.ReadBit()) {
     br.ReadBit();  // overscan_info_present_flag, overscan_appropriate_flag
-}
+  }
   out.video_signal_type_present_flag = br.ReadBit();
   if (out.video_signal_type_present_flag) {
     out.video_format = (uint8_t)br.ReadBits(3);
@@ -120,16 +120,18 @@ static void parseVui(BitReader& br, H264SPS& out) {
     out.fixed_frame_rate_flag = br.ReadBit();
   }
   out.nal_hrd_parameters_present_flag = br.ReadBit();
-  if (out.nal_hrd_parameters_present_flag) { skipHrdParameters(br);
-}
+  if (out.nal_hrd_parameters_present_flag) {
+    skipHrdParameters(br);
+  }
   out.vcl_hrd_parameters_present_flag = br.ReadBit();
-  if (out.vcl_hrd_parameters_present_flag) { skipHrdParameters(br);
-}
+  if (out.vcl_hrd_parameters_present_flag) {
+    skipHrdParameters(br);
+  }
   if (out.nal_hrd_parameters_present_flag ||
       out.vcl_hrd_parameters_present_flag) {
-    br.ReadBit();  // low_delay_hrd_flag
-}
-  br.ReadBit();    // pic_struct_present_flag
+    br.ReadBit();
+  }  // low_delay_hrd_flag
+  br.ReadBit();  // pic_struct_present_flag
   out.bitstream_restriction_flag = br.ReadBit();
   if (out.bitstream_restriction_flag) {
     br.ReadBit();  // motion_vectors_over_pic_boundaries_flag
@@ -143,8 +145,9 @@ static void parseVui(BitReader& br, H264SPS& out) {
 }
 
 bool ParseH264Sps(const NALUnit& nal, const uint8_t* data, H264SPS& out) {
-  if (nal.size < nal.start_code_len + 2) { return false;
-}
+  if (nal.size < nal.start_code_len + 2) {
+    return false;
+  }
 
   const size_t rbsp_offset = nal.start_code_len + 1;
   BitReader br(data + rbsp_offset, nal.size - rbsp_offset);
@@ -164,7 +167,7 @@ bool ParseH264Sps(const NALUnit& nal, const uint8_t* data, H264SPS& out) {
     out.chroma_format_idc = (uint32_t)br.ReadUe();
     if (out.chroma_format_idc == 3) {
       out.separate_colour_plane_flag = br.ReadBit();
-}
+    }
     out.bit_depth_luma_minus8 = (uint32_t)br.ReadUe();
     out.bit_depth_chroma_minus8 = (uint32_t)br.ReadUe();
     out.qpprime_y_zero_transform_bypass_flag = br.ReadBit();
@@ -172,8 +175,9 @@ bool ParseH264Sps(const NALUnit& nal, const uint8_t* data, H264SPS& out) {
     if (out.seq_scaling_matrix_present_flag) {
       const int num_lists = (out.chroma_format_idc != 3) ? 8 : 12;
       for (int i = 0; i < num_lists; i++) {
-        if (br.ReadBit()) { skipScalingList(br, (i < 6) ? 16 : 64);
-}
+        if (br.ReadBit()) {
+          skipScalingList(br, (i < 6) ? 16 : 64);
+        }
       }
     }
   }
@@ -190,7 +194,7 @@ bool ParseH264Sps(const NALUnit& nal, const uint8_t* data, H264SPS& out) {
     out.num_ref_frames_in_pic_order_cnt_cycle = (uint32_t)br.ReadUe();
     for (uint32_t i = 0; i < out.num_ref_frames_in_pic_order_cnt_cycle; i++) {
       br.ReadSe();
-}
+    }
   }
 
   out.max_num_ref_frames = (uint32_t)br.ReadUe();
@@ -201,7 +205,7 @@ bool ParseH264Sps(const NALUnit& nal, const uint8_t* data, H264SPS& out) {
   out.frame_mbs_only_flag = br.ReadBit();
   if (!out.frame_mbs_only_flag) {
     out.mb_adaptive_frame_field_flag = br.ReadBit();
-}
+  }
   out.direct_8x8_inference_flag = br.ReadBit();
 
   out.width = (width_in_mbs + 1) * 16;
@@ -239,14 +243,16 @@ bool ParseH264Sps(const NALUnit& nal, const uint8_t* data, H264SPS& out) {
   }
 
   out.vui_present_flag = br.ReadBit();
-  if (out.vui_present_flag) { parseVui(br, out);
-}
+  if (out.vui_present_flag) {
+    parseVui(br, out);
+  }
   return true;
 }
 
 bool ParseH264Pps(const NALUnit& nal, const uint8_t* data, H264PPS& out) {
-  if (nal.size < nal.start_code_len + 2) { return false;
-}
+  if (nal.size < nal.start_code_len + 2) {
+    return false;
+  }
 
   const size_t rbsp_offset = nal.start_code_len + 1;
   BitReader br(data + rbsp_offset, nal.size - rbsp_offset);
@@ -260,8 +266,9 @@ bool ParseH264Pps(const NALUnit& nal, const uint8_t* data, H264PPS& out) {
     out.slice_group_map_type = (uint32_t)br.ReadUe();
     const uint32_t groups = out.num_slice_groups_minus1 + 1;
     if (out.slice_group_map_type == 0) {
-      for (uint32_t i = 0; i < groups; i++) { br.ReadUe();  // run_length_minus1
-}
+      for (uint32_t i = 0; i < groups; i++) {
+        br.ReadUe();  // run_length_minus1
+      }
     } else if (out.slice_group_map_type == 2) {
       for (uint32_t i = 0; i < groups; i++) {
         br.ReadUe();  // top_left
@@ -274,11 +281,12 @@ bool ParseH264Pps(const NALUnit& nal, const uint8_t* data, H264PPS& out) {
     } else if (out.slice_group_map_type == 6) {
       const uint32_t pic_size_in_map_units_minus1 = (uint32_t)br.ReadUe();
       int bits = 0;
-      while ((1u << bits) < groups) { bits++;
-}
+      while ((1u << bits) < groups) {
+        bits++;
+      }
       for (uint32_t i = 0; i <= pic_size_in_map_units_minus1; i++) {
         br.ReadBits(bits);
-}
+      }
     }
   }
   out.num_ref_idx_l0_default_active_minus1 = (uint32_t)br.ReadUe();
@@ -298,8 +306,9 @@ bool ParseH264Pps(const NALUnit& nal, const uint8_t* data, H264PPS& out) {
     if (out.pic_scaling_matrix_present_flag) {
       const int num_lists = 6 + (out.transform_8x8_mode_flag ? 2 : 0);  // 4:2:0
       for (int i = 0; i < num_lists; i++) {
-        if (br.ReadBit()) { skipScalingList(br, (i < 6) ? 16 : 64);
-}
+        if (br.ReadBit()) {
+          skipScalingList(br, (i < 6) ? 16 : 64);
+        }
       }
     }
     out.second_chroma_qp_index_offset = (int32_t)br.ReadSe();
@@ -308,9 +317,10 @@ bool ParseH264Pps(const NALUnit& nal, const uint8_t* data, H264PPS& out) {
 }
 
 bool ParseH264SliceHeader(const NALUnit& nal, const uint8_t* data,
-                             const H264SPS& sps, H264SliceHeader& out) {
-  if (nal.size < nal.start_code_len + 5) { return false;
-}
+                          const H264SPS& sps, H264SliceHeader& out) {
+  if (nal.size < nal.start_code_len + 5) {
+    return false;
+  }
   const size_t rbsp_offset = nal.start_code_len + 1;
   RbspBitReader br(data + rbsp_offset, nal.size - rbsp_offset);
 
@@ -323,11 +333,13 @@ bool ParseH264SliceHeader(const NALUnit& nal, const uint8_t* data,
 
   if (!sps.frame_mbs_only_flag) {
     const bool field_pic_flag = br.ReadBit();
-    if (field_pic_flag) { br.ReadBit();  // bottom_field_flag
-}
+    if (field_pic_flag) {
+      br.ReadBit();  // bottom_field_flag
+    }
   }
-  if (nal.nal_type == 5) { (void)br.ReadUe();  // idr_pic_id
-}
+  if (nal.nal_type == 5) {
+    (void)br.ReadUe();  // idr_pic_id
+  }
 
   if (sps.pic_order_cnt_type == 0) {
     const uint32_t poc_bits = sps.log2_max_pic_order_cnt_lsb_minus4 + 4;

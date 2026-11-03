@@ -37,7 +37,9 @@ void appendExtraNal(std::vector<NALUnit>& nals, std::vector<uint8_t>& extra,
 
 void appendPacketNal(std::vector<NALUnit>& nals, const uint8_t* data,
                      uint32_t len, uint64_t file_offset, CodecType codec) {
-  if (len < 1) return;
+  if (len < 1) {
+    return;
+  }
   NALUnit nal;
   nal.codec = codec;
   nal.offset = file_offset;
@@ -63,7 +65,9 @@ void appendExtradataNals(std::vector<NALUnit>& nals,
                          int& length_size) {
   const uint8_t* ex = par->extradata;
   const int size = par->extradata_size;
-  if (!ex || size <= 4 || ex[0] != 1) {return;}
+  if (!ex || size <= 4 || ex[0] != 1) {
+    return;
+  }
 
   length_size = 4;
   size_t pos = 0;
@@ -76,7 +80,9 @@ void appendExtradataNals(std::vector<NALUnit>& nals,
       for (int i = 0; i < num_sps && pos + 2 <= (size_t)size; i++) {
         const int len = (ex[pos] << 8) | ex[pos + 1];
         pos += 2;
-        if (len <= 0 || pos + len > (size_t)size) {return;}
+        if (len <= 0 || pos + len > (size_t)size) {
+          return;
+        }
         appendExtraNal(nals, extra, extra_base, ex + pos, len, codec);
         pos += len;
       }
@@ -85,14 +91,18 @@ void appendExtradataNals(std::vector<NALUnit>& nals,
         for (int i = 0; i < num_pps && pos + 2 <= (size_t)size; i++) {
           const int len = (ex[pos] << 8) | ex[pos + 1];
           pos += 2;
-          if (len <= 0 || pos + len > (size_t)size) {return;}
+          if (len <= 0 || pos + len > (size_t)size) {
+            return;
+          }
           appendExtraNal(nals, extra, extra_base, ex + pos, len, codec);
           pos += len;
         }
       }
     }
   } else {
-    if (size < 23) {return;}
+    if (size < 23) {
+      return;
+    }
     length_size = (ex[21] & 0x03) + 1;
     pos = 22;
     const int num_arrays = ex[pos++];
@@ -103,7 +113,9 @@ void appendExtradataNals(std::vector<NALUnit>& nals,
       for (int i = 0; i < num_nalus && pos + 2 <= (size_t)size; i++) {
         const int len = (ex[pos] << 8) | ex[pos + 1];
         pos += 2;
-        if (len <= 0 || pos + len > (size_t)size) {return;}
+        if (len <= 0 || pos + len > (size_t)size) {
+          return;
+        }
         appendExtraNal(nals, extra, extra_base, ex + pos, len, codec);
         pos += len;
       }
@@ -118,7 +130,9 @@ bool BitstreamParser::ParseAvcc(const std::string& path, CodecType& codec,
   ResetStorage();
   error_.clear();
 
-  if (!mapped_.open(path, error_)) {return false;}
+  if (!mapped_.open(path, error_)) {
+    return false;
+  }
   base_ = mapped_.data();
 
   AVFormatContext* fmt = nullptr;
@@ -182,10 +196,13 @@ bool BitstreamParser::ParseAvcc(const std::string& path, CodecType& codec,
       const size_t end = (size_t)pkt->size;
       while (rel + (size_t)length_size <= end) {
         uint32_t nal_len = 0;
-        for (int b = 0; b < length_size; b++)
-          {nal_len = (nal_len << 8) | pkt->data[rel + b];}
+        for (int b = 0; b < length_size; b++) {
+          nal_len = (nal_len << 8) | pkt->data[rel + b];
+        }
         rel += (size_t)length_size;
-        if (nal_len == 0 || rel + nal_len > end) {break;}
+        if (nal_len == 0 || rel + nal_len > end) {
+          break;
+        }
         appendPacketNal(nals_, pkt->data + rel, nal_len,
                         (uint64_t)pkt->pos + rel, codec);
         rel += nal_len;
@@ -223,6 +240,8 @@ bool BitstreamParser::ParseAvcc(const std::string& path, CodecType& codec,
     ResetStorage();
     return false;
   }
-  if (progress) {progress(1.0);}
+  if (progress) {
+    progress(1.0);
+  }
   return true;
 }

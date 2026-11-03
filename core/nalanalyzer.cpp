@@ -63,7 +63,9 @@ bool NALAnalyzer::AnalyzeAll(BitstreamParser& parser,
         }
         case 8: {
           H264PPS pps;
-          if (ParseH264Pps(nal, data, pps)) {h264_pps_map_[pps.pps_id] = pps;}
+          if (ParseH264Pps(nal, data, pps)) {
+            h264_pps_map_[pps.pps_id] = pps;
+          }
           stats_.pps_count++;
           break;
         }
@@ -83,7 +85,9 @@ bool NALAnalyzer::AnalyzeAll(BitstreamParser& parser,
       switch (nal.nal_type) {
         case 32: {
           H265VPS vps;
-          if (ParseH265Vps(nal, data, vps)) {h265_vps_map_[vps.vps_id] = vps;}
+          if (ParseH265Vps(nal, data, vps)) {
+            h265_vps_map_[vps.vps_id] = vps;
+          }
           stats_.vps_count++;
           break;
         }
@@ -103,7 +107,9 @@ bool NALAnalyzer::AnalyzeAll(BitstreamParser& parser,
         }
         case 34: {
           H265PPS pps;
-          if (ParseH265Pps(nal, data, pps)) {h265_pps_map_[pps.pps_id] = pps;}
+          if (ParseH265Pps(nal, data, pps)) {
+            h265_pps_map_[pps.pps_id] = pps;
+          }
           stats_.pps_count++;
           break;
         }
@@ -138,8 +144,9 @@ bool NALAnalyzer::AnalyzeAll(BitstreamParser& parser,
   FrameInfo* cur = nullptr;
 
   H264SPS activeSps;
-  if (is_h264 && !h264_sps_map_.empty())
-    {activeSps = h264_sps_map_.begin()->second;}
+  if (is_h264 && !h264_sps_map_.empty()) {
+    activeSps = h264_sps_map_.begin()->second;
+  }
 
   processed = 0;
   for (auto& nal : nals) {
@@ -167,23 +174,31 @@ bool NALAnalyzer::AnalyzeAll(BitstreamParser& parser,
     if (is_h264) {
       H264SliceHeader sh;
       if (ParseH264SliceHeader(nal, data, activeSps, sh)) {
-        if (sh.first_mb_in_slice == 0) {is_new = true;}
+        if (sh.first_mb_in_slice == 0) {
+          is_new = true;
+        }
         poc = sh.pic_order_cnt_lsb;
         poc_ok = true;
         ft = sh.FrameTypeChar();
       }
       idr = (nal.nal_type == 5);
-      if (idr) {ft = 'I';}
+      if (idr) {
+        ft = 'I';
+      }
     } else {
       idr = (nal.nal_type >= 16 && nal.nal_type <= 23);
-      if (idr) {ft = 'I';}
+      if (idr) {
+        ft = 'I';
+      }
 
       uint32_t pps_id = 0;
       {
         RbspBitReader br(data + nal.start_code_len + 2,
                          nal.size - nal.start_code_len - 2);
-        br.ReadBit();           // first_slice_segment_in_pic_flag
-        if (idr) {br.ReadBit();}  // no_output_of_prior_pics_flag
+        br.ReadBit();  // first_slice_segment_in_pic_flag
+        if (idr) {
+          br.ReadBit();
+        }  // no_output_of_prior_pics_flag
         pps_id = (uint32_t)br.ReadUe();
       }
       auto pps_it = h265_pps_map_.find((int)pps_id);
@@ -193,7 +208,9 @@ bool NALAnalyzer::AnalyzeAll(BitstreamParser& parser,
           H265SliceSegmentHeader sh;
           if (ParseH265SliceSegmentHeader(nal, data, sps_it->second,
                                           pps_it->second, sh)) {
-            if (sh.first_slice_segment_in_pic_flag) {is_new = true;}
+            if (sh.first_slice_segment_in_pic_flag) {
+              is_new = true;
+            }
             if (sh.poc_valid) {
               poc = sh.pic_order_cnt_lsb;
               poc_ok = true;
@@ -231,9 +248,10 @@ bool NALAnalyzer::AnalyzeAll(BitstreamParser& parser,
 
     if (all_poc && frames.size() > 1) {
       uint32_t log2_poc = activeSps.log2_max_pic_order_cnt_lsb_minus4;
-      if (!is_h264 && !h265_sps_map_.empty())
-        {log2_poc =
-            h265_sps_map_.begin()->second.log2_max_pic_order_cnt_lsb_minus4;}
+      if (!is_h264 && !h265_sps_map_.empty()) {
+        log2_poc =
+            h265_sps_map_.begin()->second.log2_max_pic_order_cnt_lsb_minus4;
+      }
       const uint32_t max_lsb = 1u << (log2_poc + 4);
       std::vector<int64_t> full_poc(frames.size(), 0);
 
@@ -243,7 +261,9 @@ bool NALAnalyzer::AnalyzeAll(BitstreamParser& parser,
       uint32_t prev_lsb = 0;
       for (int i = 1; i <= (int)frames.size(); i++) {
         const bool boundary = (i == (int)frames.size()) || frames[i].is_idr;
-        if (!boundary) {continue;}
+        if (!boundary) {
+          continue;
+        }
 
         msb = 0;
         prev_lsb = frames[seg_start].poc_lsb;
@@ -260,7 +280,9 @@ bool NALAnalyzer::AnalyzeAll(BitstreamParser& parser,
         }
 
         std::vector<int> idxs;
-        for (int k = seg_start; k < i; k++) {idxs.push_back(k);}
+        for (int k = seg_start; k < i; k++) {
+          idxs.push_back(k);
+        }
         std::stable_sort(idxs.begin(), idxs.end(), [&](int a, int b) {
           return full_poc[a] < full_poc[b];
         });
@@ -301,8 +323,9 @@ bool NALAnalyzer::AnalyzeAll(BitstreamParser& parser,
         break;
     }
   }
-  if (progress) { progress(1.0);
-}
+  if (progress) {
+    progress(1.0);
+  }
   return true;
 }
 
@@ -329,9 +352,10 @@ NALAnalysis NALAnalyzer::AnalyzeOne(const NALUnit& nal,
           oss << "Max frame num: "
               << (1u << (a.h264sps.log2_max_frame_num_minus4 + 4)) << "\n";
           oss << "PIC order cnt type: " << a.h264sps.pic_order_cnt_type << "\n";
-          if (a.h264sps.pic_order_cnt_type == 0)
-            {oss << "Log2 max POC LSB: "
-                << a.h264sps.log2_max_pic_order_cnt_lsb_minus4 + 4 << "\n";}
+          if (a.h264sps.pic_order_cnt_type == 0) {
+            oss << "Log2 max POC LSB: "
+                << a.h264sps.log2_max_pic_order_cnt_lsb_minus4 + 4 << "\n";
+          }
           oss << "Max ref frames: " << a.h264sps.max_num_ref_frames << "\n";
           oss << "Frame only: " << a.h264sps.frame_mbs_only_flag << "\n";
           oss << "Direct 8x8: " << a.h264sps.direct_8x8_inference_flag << "\n";
@@ -378,9 +402,10 @@ NALAnalysis NALAnalyzer::AnalyzeOne(const NALUnit& nal,
               << a.h264pps.entropy_coding_mode_flag << "\n";
           oss << "Slice groups: " << a.h264pps.num_slice_groups_minus1 + 1
               << "\n";
-          if (a.h264pps.num_slice_groups_minus1 > 0)
-            {oss << "Slice group map type: " << a.h264pps.slice_group_map_type
-                << "\n";}
+          if (a.h264pps.num_slice_groups_minus1 > 0) {
+            oss << "Slice group map type: " << a.h264pps.slice_group_map_type
+                << "\n";
+          }
           oss << "Ref idx L0/L1: "
               << a.h264pps.num_ref_idx_l0_default_active_minus1 + 1 << "/"
               << a.h264pps.num_ref_idx_l1_default_active_minus1 + 1 << "\n";
@@ -533,17 +558,19 @@ NALAnalysis NALAnalyzer::AnalyzeOne(const NALUnit& nal,
           oss << "Transform skip: " << a.h265pps.transform_skip_enabled_flag
               << "\n";
           oss << "CU QP delta: " << a.h265pps.cu_qp_delta_enabled_flag;
-          if (a.h265pps.cu_qp_delta_enabled_flag)
-            {oss << " (depth " << a.h265pps.diff_cu_qp_delta_depth << ")";}
+          if (a.h265pps.cu_qp_delta_enabled_flag) {
+            oss << " (depth " << a.h265pps.diff_cu_qp_delta_depth << ")";
+          }
           oss << "\n";
           oss << "Chroma QP offset (Cb/Cr): " << a.h265pps.pps_cb_qp_offset
               << "/" << a.h265pps.pps_cr_qp_offset << "\n";
           oss << "Weighted pred/bipred: " << a.h265pps.weighted_pred_flag << "/"
               << a.h265pps.weighted_bipred_flag << "\n";
           oss << "Tiles: " << a.h265pps.tiles_enabled_flag;
-          if (a.h265pps.tiles_enabled_flag)
-            {oss << " (" << a.h265pps.num_tile_columns_minus1 + 1 << " x "
-                << a.h265pps.num_tile_rows_minus1 + 1 << ")";}
+          if (a.h265pps.tiles_enabled_flag) {
+            oss << " (" << a.h265pps.num_tile_columns_minus1 + 1 << " x "
+                << a.h265pps.num_tile_rows_minus1 + 1 << ")";
+          }
           oss << "\n";
           oss << "Entropy coding sync: "
               << a.h265pps.entropy_coding_sync_enabled_flag << "\n";

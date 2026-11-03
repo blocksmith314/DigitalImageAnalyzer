@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -60,6 +59,8 @@ TEST(MappedFileTest, MoveTransfersOwnership) {
   ASSERT_TRUE(source.open(path.string(), error)) << error;
 
   MappedFile moved(std::move(source));
+  // MappedFile resets the source on move, so checking its size is safe here.
+  // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
   EXPECT_EQ(source.size(), 0u);
   EXPECT_EQ(moved.size(), 6u);
   ASSERT_NE(moved.data(), nullptr);
@@ -67,6 +68,8 @@ TEST(MappedFileTest, MoveTransfersOwnership) {
 
   MappedFile assigned;
   assigned = std::move(moved);
+  // MappedFile resets the source on move, so checking its size is safe here.
+  // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
   EXPECT_EQ(moved.size(), 0u);
   EXPECT_EQ(assigned.size(), 6u);
 

@@ -93,7 +93,9 @@ void MainWindow::SetupUi() {
   nal_list_->setAlternatingRowColors(true);
   connect(nal_list_->selectionModel(), &QItemSelectionModel::currentRowChanged,
           this, [this](const QModelIndex& current, const QModelIndex&) {
-            if (current.isValid()) OnNalSelected(current.row());
+            if (current.isValid()) {
+              OnNalSelected(current.row());
+            }
           });
 
   stats_panel_ = new QTextBrowser();
@@ -133,8 +135,7 @@ void MainWindow::SetupUi() {
   connect(nextShortcut, &QShortcut::activated, this,
           &MainWindow::OnStepForward);
   auto* playShortcut = new QShortcut(QKeySequence(Qt::Key_Space), this);
-  connect(playShortcut, &QShortcut::activated, this,
-          &MainWindow::OnPlayPause);
+  connect(playShortcut, &QShortcut::activated, this, &MainWindow::OnPlayPause);
 
   play_btn_ = new QPushButton("Play");
   play_btn_->setFixedWidth(64);
@@ -170,8 +171,9 @@ void MainWindow::SetupUi() {
     static const SpeedItem speeds[] = {
         {"0.25x", 0.25}, {"0.5x", 0.5}, {"0.75x", 0.75}, {"1x", 1.0},
         {"1.5x", 1.5},   {"2x", 2.0},   {"4x", 4.0}};
-    for (const auto& s : speeds)
+    for (const auto& s : speeds) {
       speed_combo_->addItem(QString::fromUtf8(s.label), s.value);
+    }
   }
   speed_combo_->setCurrentIndex(3);  // default: 1x
   speed_combo_->setFixedWidth(80);
@@ -277,8 +279,12 @@ void MainWindow::OpenFile() {
       this, "Open Video File", "",
       "Video Files (*.h264 *.h265 *.264 *.265 *.hevc *.mp4 *.mov *.m4v *.ts "
       "*.mkv);;All Files (*)");
-  if (path.isEmpty()) return;
-  if (LoadFile(path)) AddRecentFile(path);
+  if (path.isEmpty()) {
+    return;
+  }
+  if (LoadFile(path)) {
+    AddRecentFile(path);
+  }
 }
 
 bool MainWindow::LoadFile(const QString& path) {
@@ -293,7 +299,9 @@ bool MainWindow::LoadFile(const QString& path) {
   dlg.setAutoReset(false);
 
   auto progress = [&dlg](double fraction) -> bool {
-    if (dlg.wasCanceled()) return false;
+    if (dlg.wasCanceled()) {
+      return false;
+    }
     if (fraction < 0.0) {
       dlg.setRange(0, 0);
     } else {
@@ -357,7 +365,9 @@ bool MainWindow::LoadFile(const QString& path) {
   BuildNalList();
   UpdateStats();
   StartPlayer();
-  if (audio_) audio_->open(current_path_);
+  if (audio_) {
+    audio_->open(current_path_);
+  }
 
   const qint64 total_ms = probeMs + demuxMs + analyze_ms + timer.restart();
   if (time_info_label_) {
@@ -420,18 +430,26 @@ void MainWindow::UpdateStats() {
   row("Total size",
       QString("%1 KB (%2 MB)").arg(kb, 0, 'f', 2).arg(mb, 0, 'f', 2));
   QStringList formatBits;
-  if (s.width > 0 && s.height > 0)
+  if (s.width > 0 && s.height > 0) {
     formatBits << QString("%1 x %2").arg(s.width).arg(s.height);
-  if (!s.profile.empty()) formatBits << QString::fromStdString(s.profile);
-  if (!s.level.empty())
+  }
+  if (!s.profile.empty()) {
+    formatBits << QString::fromStdString(s.profile);
+  }
+  if (!s.level.empty()) {
     formatBits << QString("Level %1").arg(QString::fromStdString(s.level));
-  if (!formatBits.isEmpty()) row("Format", formatBits.join("  \u00b7  "));
+  }
+  if (!formatBits.isEmpty()) {
+    row("Format", formatBits.join("  \u00b7  "));
+  }
   row("Frames", QString("%1  (I %2 / P %3 / B %4)")
                     .arg(frames)
                     .arg(s.i_frame_count)
                     .arg(s.p_frame_count)
                     .arg(s.b_frame_count));
-  if (fps > 0.0) row("Frame rate", QString("%1 fps").arg(fps, 0, 'f', 2));
+  if (fps > 0.0) {
+    row("Frame rate", QString("%1 fps").arg(fps, 0, 'f', 2));
+  }
   if (duration > 0.0) {
     row("Duration", QString("%1 s").arg(duration, 0, 'f', 2));
     row("Bitrate", QString("%1 Mbps").arg(mbps, 0, 'f', 3));
@@ -439,15 +457,17 @@ void MainWindow::UpdateStats() {
   row("Slices", QString("%1  (%2 / frame)")
                     .arg(s.slice_count)
                     .arg(slices_per_frame, 0, 'f', 2));
-  if (s.idr_count > 0)
+  if (s.idr_count > 0) {
     row("GOP", QString("%1 IDR, avg %2 frames")
                    .arg(s.idr_count)
                    .arg(avg_gop, 0, 'f', 2));
-  if (s.total_nals > 0)
+  }
+  if (s.total_nals > 0) {
     row("NAL size", QString("avg %1 B / max %2 B / min %3 B")
                         .arg((int)avg_nal)
                         .arg(s.max_nal_size)
                         .arg(s.min_nal_size));
+  }
   html += "</table>";
 
   html += "<p style='margin:6px 0 3px 0'><b>NAL Type Distribution</b></p>";
@@ -455,7 +475,9 @@ void MainWindow::UpdateStats() {
   row("IDR/Keyframe", QString::number(s.idr_count));
   row("SPS", QString::number(s.sps_count));
   row("PPS", QString::number(s.pps_count));
-  if (s.vps_count > 0) row("VPS", QString::number(s.vps_count));
+  if (s.vps_count > 0) {
+    row("VPS", QString::number(s.vps_count));
+  }
   row("SEI / AUD", QString("%1 / %2").arg(s.sei_count).arg(s.aud_count));
   row("Slice NALs", QString::number(s.slice_count));
   html += "</table>";
@@ -510,7 +532,9 @@ void MainWindow::StartPlayer() {
 }
 
 void MainWindow::ShowFrame(const QImage& image, int frame_idx) {
-  if (image.isNull()) return;
+  if (image.isNull()) {
+    return;
+  }
   current_image_ = image;
   QSize target = video_size_.isValid() ? video_size_ : video_label_->size();
   QImage scaled =
@@ -523,19 +547,27 @@ void MainWindow::ShowFrame(const QImage& image, int frame_idx) {
     seek_slider_->setValue(frame_idx);
   }
   HighlightFrame(frame_idx);
-  if (fullscreen_) UpdateFullscreenFrame();
+  if (fullscreen_) {
+    UpdateFullscreenFrame();
+  }
 }
 
 void MainWindow::ShowFrameAt(int idx) {
-  if (total_frames_ <= 0) return;
+  if (total_frames_ <= 0) {
+    return;
+  }
   idx = qBound(0, idx, total_frames_ - 1);
-  if (idx == current_frame_index_) return;
+  if (idx == current_frame_index_) {
+    return;
+  }
 
   // Decode sequentially when moving forward by one; otherwise seek.
   const bool jump =
       (idx < current_frame_index_ || idx > current_frame_index_ + 1);
   if (jump) {
-    if (!player_decoder_.SeekToFrame(idx)) return;
+    if (!player_decoder_.SeekToFrame(idx)) {
+      return;
+    }
   }
 
   DecodedFrame frame;
@@ -566,10 +598,14 @@ void MainWindow::ShowFrameAt(int idx) {
 
 void MainWindow::HighlightFrame(int frame_idx) {
   nal_model_->SetHighlightedFrame(frame_idx);
-  if (frame_idx < 0) return;
+  if (frame_idx < 0) {
+    return;
+  }
 
   const int row = nal_model_->FirstRowForFrame(frame_idx);
-  if (row < 0) return;
+  if (row < 0) {
+    return;
+  }
   const QModelIndex idx = nal_model_->index(row, 0);
   if (!nal_list_->viewport()->rect().intersects(nal_list_->visualRect(idx))) {
     QTimer::singleShot(0, this, [this, idx]() {
@@ -579,23 +615,31 @@ void MainWindow::HighlightFrame(int frame_idx) {
 }
 
 void MainWindow::OnPlayPause() {
-  if (total_frames_ == 0) return;
+  if (total_frames_ == 0) {
+    return;
+  }
 
   if (!is_playing_) {
-    if (current_frame_index_ >= total_frames_ - 1) ShowFrameAt(0);
+    if (current_frame_index_ >= total_frames_ - 1) {
+      ShowFrameAt(0);
+    }
     has_pending_ = false;
     clock_start_pts_ = current_pts_;
     play_clock_.start();
-    player_timer_->start(
-        player_decoder_.HasTimestamps() ? 5 : PlayerIntervalMs());
+    player_timer_->start(player_decoder_.HasTimestamps() ? 5
+                                                         : PlayerIntervalMs());
     play_btn_->setText("Pause");
     is_playing_ = true;
-    if (audio_) audio_->play();
+    if (audio_) {
+      audio_->play();
+    }
   } else {
     player_timer_->stop();
     play_btn_->setText("Play");
     is_playing_ = false;
-    if (audio_) audio_->pause();
+    if (audio_) {
+      audio_->pause();
+    }
   }
 }
 
@@ -607,15 +651,19 @@ int MainWindow::PlayerIntervalMs() const {
 }
 
 void MainWindow::OnSpeedChanged(int index) {
-  if (!speed_combo_) return;
+  if (!speed_combo_) {
+    return;
+  }
   double speed = speed_combo_->itemData(index).toDouble();
-  if (speed <= 0.0) speed = 1.0;
+  if (speed <= 0.0) {
+    speed = 1.0;
+  }
   playback_speed_ = speed;
   if (is_playing_) {
     clock_start_pts_ = current_pts_;
     play_clock_.restart();
-    player_timer_->start(
-        player_decoder_.HasTimestamps() ? 5 : PlayerIntervalMs());
+    player_timer_->start(player_decoder_.HasTimestamps() ? 5
+                                                         : PlayerIntervalMs());
   }
 }
 
@@ -623,37 +671,51 @@ void MainWindow::OnStop() {
   player_timer_->stop();
   is_playing_ = false;
   play_btn_->setText("Play");
-  if (audio_) audio_->stop();
+  if (audio_) {
+    audio_->stop();
+  }
   ShowFrameAt(0);
 }
 
 void MainWindow::OnStepForward() {
-  if (total_frames_ <= 0) return;
+  if (total_frames_ <= 0) {
+    return;
+  }
   player_timer_->stop();
   is_playing_ = false;
   play_btn_->setText("Play");
-  if (audio_) audio_->pause();
+  if (audio_) {
+    audio_->pause();
+  }
   const int step = step_spin_ ? step_spin_->value() : 1;
   ShowFrameAt(current_frame_index_ + step);
 }
 
 void MainWindow::OnStepBackward() {
-  if (total_frames_ <= 0) return;
+  if (total_frames_ <= 0) {
+    return;
+  }
   player_timer_->stop();
   is_playing_ = false;
   play_btn_->setText("Play");
-  if (audio_) audio_->pause();
+  if (audio_) {
+    audio_->pause();
+  }
   const int step = step_spin_ ? step_spin_->value() : 1;
   ShowFrameAt(current_frame_index_ - step);
 }
 
 void MainWindow::OnSeek(int value) {
-  if (total_frames_ <= 0) return;
+  if (total_frames_ <= 0) {
+    return;
+  }
   ShowFrameAt(value);
 }
 
 void MainWindow::OnPlayerTick() {
-  if (total_frames_ <= 0) return;
+  if (total_frames_ <= 0) {
+    return;
+  }
 
   // Raw streams have no container timestamps: fall back to the fixed timer.
   if (!player_decoder_.HasTimestamps()) {
@@ -691,14 +753,20 @@ void MainWindow::StopPlayback() {
   player_timer_->stop();
   is_playing_ = false;
   play_btn_->setText("Play");
-  if (audio_) audio_->pause();
+  if (audio_) {
+    audio_->pause();
+  }
 }
 
 void MainWindow::OnNalSelected(int idx) {
-  if (idx < 0) return;
+  if (idx < 0) {
+    return;
+  }
 
   const auto& nals = parser_.NalUnits();
-  if ((size_t)idx >= nals.size()) return;
+  if ((size_t)idx >= nals.size()) {
+    return;
+  }
 
   NALAnalysis analysis = analyzer_.AnalyzeOne(
       nals[(size_t)idx], parser_.NalData(nals[(size_t)idx]));
@@ -706,16 +774,22 @@ void MainWindow::OnNalSelected(int idx) {
 
   const int f_idx = nals[(size_t)idx].frame_index;
   if (f_idx >= 0 && f_idx < total_frames_) {
-    if (is_playing_) StopPlayback();
+    if (is_playing_) {
+      StopPlayback();
+    }
     ShowFrameAt(f_idx);
   }
 }
 
 void MainWindow::OpenRecentFile() {
   QAction* action = qobject_cast<QAction*>(sender());
-  if (!action) return;
+  if (!action) {
+    return;
+  }
   int idx = action->data().toInt();
-  if (idx < 0 || idx >= recent_files_.size()) return;
+  if (idx < 0 || idx >= recent_files_.size()) {
+    return;
+  }
   QString path = recent_files_.at(idx);
   if (!QFile::exists(path)) {
     QMessageBox::warning(this, "File Missing",
@@ -725,15 +799,21 @@ void MainWindow::OpenRecentFile() {
     UpdateRecentMenu();
     return;
   }
-  if (LoadFile(path)) AddRecentFile(path);
+  if (LoadFile(path)) {
+    AddRecentFile(path);
+  }
 }
 
 void MainWindow::AddRecentFile(const QString& path) {
   QString canonical = QFileInfo(path).canonicalFilePath();
-  if (canonical.isEmpty()) canonical = path;
+  if (canonical.isEmpty()) {
+    canonical = path;
+  }
   recent_files_.removeAll(canonical);
   recent_files_.prepend(canonical);
-  while (recent_files_.size() > MAX_RECENT_FILES) recent_files_.removeLast();
+  while (recent_files_.size() > MAX_RECENT_FILES) {
+    recent_files_.removeLast();
+  }
   SaveRecentFiles();
   UpdateRecentMenu();
 }
@@ -767,24 +847,34 @@ void MainWindow::SaveRecentFiles() {
 }
 
 void MainWindow::SyncSplitterWidths(bool from_top) {
-  if (!top_split_ || !bottom_split_ || syncing_splitters_) return;
+  if (!top_split_ || !bottom_split_ || syncing_splitters_) {
+    return;
+  }
 
   // Remember the split position the user chose and apply it to both rows.
   QSplitter* source = from_top ? top_split_ : bottom_split_;
   const QList<int> sizes = source->sizes();
-  if (sizes.size() < 2) return;
+  if (sizes.size() < 2) {
+    return;
+  }
   const int total = sizes[0] + sizes[1] + top_split_->handleWidth();
   // Ignore degenerate layouts reported before the window is fully sized.
-  if (total > 400) split_fraction_ = (double)sizes[0] / (double)total;
+  if (total > 400) {
+    split_fraction_ = (double)sizes[0] / (double)total;
+  }
 
   ApplySplitFraction();
 }
 
 void MainWindow::ApplySplitFraction() {
-  if (!top_split_ || !bottom_split_) return;
+  if (!top_split_ || !bottom_split_) {
+    return;
+  }
 
   const int width = top_split_->width() - top_split_->handleWidth();
-  if (width <= 0) return;
+  if (width <= 0) {
+    return;
+  }
 
   const int left = qBound(0, (int)(split_fraction_ * width), width);
   const QList<int> sizes{left, width - left};
@@ -819,14 +909,17 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
 }
 
 void MainWindow::ToggleFullscreen() {
-  if (fullscreen_)
+  if (fullscreen_) {
     ExitFullscreen();
-  else
+  } else {
     EnterFullscreen();
+  }
 }
 
 void MainWindow::EnterFullscreen() {
-  if (fullscreen_ || current_image_.isNull()) return;
+  if (fullscreen_ || current_image_.isNull()) {
+    return;
+  }
 
   if (!fullscreen_window_) {
     fullscreen_window_ =
@@ -862,25 +955,37 @@ void MainWindow::EnterFullscreen() {
 }
 
 void MainWindow::ExitFullscreen() {
-  if (!fullscreen_) return;
+  if (!fullscreen_) {
+    return;
+  }
   fullscreen_ = false;
-  if (fullscreen_window_) fullscreen_window_->hide();
+  if (fullscreen_window_) {
+    fullscreen_window_->hide();
+  }
   show();
   raise();
   activateWindow();
 }
 
 void MainWindow::UpdateFullscreenFrame() {
-  if (!fullscreen_ || !fullscreen_label_ || current_image_.isNull()) return;
+  if (!fullscreen_ || !fullscreen_label_ || current_image_.isNull()) {
+    return;
+  }
   QSize target = fullscreen_window_ ? fullscreen_window_->size() : QSize();
-  if (target.isEmpty()) target = fullscreen_label_->size();
+  if (target.isEmpty()) {
+    target = fullscreen_label_->size();
+  }
   fullscreen_label_->setPixmap(QPixmap::fromImage(current_image_.scaled(
       target, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
-  if (fullscreen_window_) fullscreen_window_->close();
-  if (audio_) audio_->close();
+  if (fullscreen_window_) {
+    fullscreen_window_->close();
+  }
+  if (audio_) {
+    audio_->close();
+  }
   SaveRecentFiles();
   event->accept();
 }
