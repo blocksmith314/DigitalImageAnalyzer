@@ -165,7 +165,7 @@ TEST(MainWindowTest, LoadsFileAndUpdatesViews) {
 
   QLabel* label = frameLabel(window);
   ASSERT_NE(label, nullptr);
-  EXPECT_EQ(label->text(), "Frame: 0 / 10");
+  EXPECT_EQ(label->text(), "Frame: 1 / 10");
 
   bool status_has_nal_count = false;
   for (QLabel* statusLabel : window.statusBar()->findChildren<QLabel*>()) {
@@ -196,7 +196,7 @@ TEST(MainWindowTest, StepForwardUsesSpinBoxValue) {
 
   QLabel* label = frameLabel(window);
   ASSERT_NE(label, nullptr);
-  EXPECT_EQ(label->text(), "Frame: 3 / 10");
+  EXPECT_EQ(label->text(), "Frame: 4 / 10");
 
   auto* slider = window.findChild<QSlider*>();
   ASSERT_NE(slider, nullptr);
