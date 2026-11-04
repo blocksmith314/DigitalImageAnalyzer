@@ -5,6 +5,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileDialog>
+#include <QFontMetrics>
 #include <QFileInfo>
 #include <QFont>
 #include <QGroupBox>
@@ -383,8 +384,7 @@ bool MainWindow::LoadFile(const QString& path) {
   auto& stats = analyzer_.stats();
   QString codec_str =
       (stats.codec == CodecType::kH264) ? "H.264/AVC" : "H.265/HEVC";
-  file_info_label_->setText(QString("%1 | %2 | %3 NAL units | %4 bytes | %5x%6")
-                                .arg(fi.fileName())
+  file_info_label_->setText(QString("%1 | %2 NAL units | %3 bytes | %4x%5")
                                 .arg(codec_str)
                                 .arg(stats.total_nals)
                                 .arg(stats.total_bytes)
@@ -397,7 +397,10 @@ bool MainWindow::LoadFile(const QString& path) {
 
 void MainWindow::BuildNalList() {
   nal_model_->SetNalUnits(&parser_.NalUnits());
-  nal_list_->resizeColumnToContents(2);
+  // resizeColumnToContents(2) scans every row, which is slow for millions of
+  // NAL units. Size the name column from the longest known type name instead.
+  const QFontMetrics metrics(nal_list_->font());
+  nal_list_->setColumnWidth(2, metrics.horizontalAdvance("RSV_IRAP_VCL22") + 24);
 }
 
 void MainWindow::UpdateStats() {
@@ -541,7 +544,7 @@ void MainWindow::ShowFrame(const QImage& image, int frame_idx) {
       image.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation);
   video_label_->setPixmap(QPixmap::fromImage(scaled));
   frame_info_label_->setText(
-      QString("Frame: %1 / %2").arg(frame_idx).arg(total_frames_));
+      QString("Frame: %1 / %2").arg(frame_idx + 1).arg(total_frames_));
   if (!seek_slider_->isSliderDown()) {
     QSignalBlocker blocker(seek_slider_);
     seek_slider_->setValue(frame_idx);
