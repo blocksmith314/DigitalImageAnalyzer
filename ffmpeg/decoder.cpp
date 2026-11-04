@@ -236,7 +236,6 @@ bool FFmpegDecoder::DecodeNextFrame(DecodedFrame& out, bool convert) {
 
       frame_count_++;
       current_frame_++;
-      got_frame = true;
 
       av_packet_unref(pkt);
       av_frame_unref(frame);
