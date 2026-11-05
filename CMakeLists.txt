@@ -137,6 +137,20 @@ if (BUILD_TOOLS)
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         target_compile_options(bench_parse PRIVATE $<$<CONFIG:Debug>:-O2>)
     endif ()
+
+    # Model repaint micro-benchmark (developer tool, not registered as a test).
+    add_executable(bench_model test/tools/bench_model.cpp
+        ${CMAKE_SOURCE_DIR}/nallistmodel.cpp
+        ${TOOL_CORE_SOURCES})
+    target_include_directories(bench_model PRIVATE
+        ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/core)
+    set_target_properties(bench_model PROPERTIES
+        FOLDER "tools"
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test/tools)
+    target_link_libraries(bench_model PRIVATE Qt6::Widgets)
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(bench_model PRIVATE $<$<CONFIG:Debug>:-O2>)
+    endif ()
 endif()
 
 option(BUILD_TEST "Build unit tests" ON)

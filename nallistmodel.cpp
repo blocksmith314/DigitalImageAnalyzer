@@ -2,41 +2,77 @@
 
 #include <QColor>
 #include <QFont>
+#include <array>
 
 namespace {
 
-QColor color_for(const NALUnit& nal) {
+const QColor& color_for(const NALUnit& nal) {
+  static const QColor kNone;
+  static const QColor kSps(220, 200, 255);
+  static const QColor kPps(200, 255, 220);
+  static const QColor kIdr(255, 200, 200);
+  static const QColor kSei(255, 255, 200);
+  static const QColor kVps(255, 220, 255);
   if (nal.codec == CodecType::kH264) {
     switch (nal.nal_type) {
       case 7:
-        return QColor(220, 200, 255);
+        return kSps;
       case 8:
-        return QColor(200, 255, 220);
+        return kPps;
       case 5:
-        return QColor(255, 200, 200);
+        return kIdr;
       case 6:
-        return QColor(255, 255, 200);
+        return kSei;
       default:
-        return {};
+        return kNone;
     }
   }
   switch (nal.nal_type) {
     case 32:
-      return QColor(255, 220, 255);
+      return kVps;
     case 33:
-      return QColor(220, 200, 255);
+      return kSps;
     case 34:
-      return QColor(200, 255, 220);
+      return kPps;
     case 19:
     case 20:
     case 21:
-      return QColor(255, 200, 200);
+      return kIdr;
     case 39:
     case 40:
-      return QColor(255, 255, 200);
+      return kSei;
     default:
-      return {};
+      return kNone;
   }
+}
+
+// Names are immutable, so build the QString table once instead of converting
+// a std::string for every visible cell on every repaint.
+const QString& TypeNameText(const NALUnit& nal) {
+  static const std::array<QString, 32> h264 = [] {
+    std::array<QString, 32> names;
+    NALUnit unit;
+    unit.codec = CodecType::kH264;
+    for (uint8_t type = 0; type < 32; type++) {
+      unit.nal_type = type;
+      names[type] = QString::fromStdString(unit.TypeName());
+    }
+    return names;
+  }();
+  static const std::array<QString, 64> h265 = [] {
+    std::array<QString, 64> names;
+    NALUnit unit;
+    unit.codec = CodecType::kH265;
+    for (uint8_t type = 0; type < 64; type++) {
+      unit.nal_type = type;
+      names[type] = QString::fromStdString(unit.TypeName());
+    }
+    return names;
+  }();
+  if (nal.codec == CodecType::kH264) {
+    return h264[nal.nal_type & 31];
+  }
+  return h265[nal.nal_type & 63];
 }
 
 }  // namespace
@@ -75,12 +111,24 @@ void NalListModel::SetHighlightedFrame(int frame_index) {
   }
   const int old = highlighted_frame_;
   highlighted_frame_ = frame_index;
-  if (nals_ && !nals_->empty()) {
-    emit dataChanged(index(0, 0),
-                     index((int)nals_->size() - 1, columnCount() - 1),
-                     {Qt::BackgroundRole});
-    Q_UNUSED(old);
+  if (!nals_ || nals_->empty()) {
+    return;
   }
+  const auto notify = [this](int frame) {
+    const int first = FirstRowForFrame(frame);
+    if (first < 0) {
+      return;
+    }
+    int last = first;
+    while (last + 1 < (int)nals_->size() &&
+           (*nals_)[(size_t)last + 1].frame_index == frame) {
+      last++;
+    }
+    emit dataChanged(index(first, 0), index(last, columnCount() - 1),
+                     {Qt::BackgroundRole});
+  };
+  notify(old);
+  notify(frame_index);
 }
 
 int NalListModel::FirstRowForFrame(int frame_index) const {
@@ -118,19 +166,19 @@ QVariant NalListModel::data(const QModelIndex& index, int role) const {
       case 1:
         return nal.nal_type;
       case 2:
-        return QString::fromStdString(nal.TypeName());
+        return TypeNameText(nal);
       case 3:
-        return QString::number(nal.size);
+        return static_cast<qulonglong>(nal.size);
       case 4:
         return QString("0x%1").arg(nal.offset, 8, 16, QChar('0')).toUpper();
       case 5:
-        return nal.frame_type ? QString(QChar(nal.frame_type)) : QString("-");
+        return nal.frame_type ? QChar(nal.frame_type) : QChar('-');
       case 6:
-        return nal.dts_index >= 0 ? QString::number(nal.dts_index)
-                                  : QString("-");
+        return nal.dts_index >= 0 ? QVariant(nal.dts_index)
+                                  : QVariant(QChar('-'));
       case 7:
-        return nal.frame_index >= 0 ? QString::number(nal.frame_index)
-                                    : QString("-");
+        return nal.frame_index >= 0 ? QVariant(nal.frame_index)
+                                    : QVariant(QChar('-'));
       default:
         return QString();
     }
@@ -138,9 +186,10 @@ QVariant NalListModel::data(const QModelIndex& index, int role) const {
 
   if (role == Qt::BackgroundRole) {
     if (nal.frame_index >= 0 && nal.frame_index == highlighted_frame_) {
-      return QColor(255, 165, 30);
+      static const QColor kHighlight(255, 165, 30);
+      return kHighlight;
     }
-    const QColor color = color_for(nal);
+    const QColor& color = color_for(nal);
     // Return a null QVariant (not an invalid QColor) so the view keeps its
     // default background instead of painting the row black.
     return color.isValid() ? QVariant(color) : QVariant();
