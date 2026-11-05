@@ -135,8 +135,9 @@ TEST(NalListModelTest, HighlightEmitsOnlyWhenFrameChanges) {
   model.SetHighlightedFrame(0);  // same frame: no extra signal
   EXPECT_EQ(spy.count(), 1);
 
+  // Switching frames repaints the old and the new frame rows.
   model.SetHighlightedFrame(1);
-  EXPECT_EQ(spy.count(), 2);
+  EXPECT_EQ(spy.count(), 3);
 }
 
 TEST(MainWindowTest, LoadsFileAndUpdatesViews) {
