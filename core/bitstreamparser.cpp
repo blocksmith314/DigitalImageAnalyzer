@@ -32,9 +32,7 @@ BitstreamParser& BitstreamParser::operator=(BitstreamParser&& other) noexcept {
   return *this;
 }
 
-void BitstreamParser::ReleaseMappedPages() {
-  mapped_.ReleaseResidentPages();
-}
+void BitstreamParser::ReleaseMappedPages() { mapped_.ReleaseResidentPages(); }
 
 void BitstreamParser::ResetStorage() {
   mapped_.close();
@@ -46,8 +44,16 @@ void BitstreamParser::ResetStorage() {
 
 static int64_t find_start_code(const uint8_t* data, size_t len, size_t pos,
                                uint8_t& sc_len) {
-  for (size_t i = pos; i + 3 < len; i++) {
-    if (data[i] == 0x00 && data[i + 1] == 0x00) {
+  // Almost every byte of an Annex B stream is payload, so jump between zero
+  // bytes with memchr instead of testing every position.
+  size_t i = pos;
+  while (i + 2 < len) {
+    const void* found = std::memchr(data + i, 0x00, len - 2 - i);
+    if (found == nullptr) {
+      return -1;
+    }
+    i = static_cast<size_t>(static_cast<const uint8_t*>(found) - data);
+    if (data[i + 1] == 0x00) {
       if (data[i + 2] == 0x01) {
         sc_len = 3;
         return (int64_t)i;
@@ -57,6 +63,7 @@ static int64_t find_start_code(const uint8_t* data, size_t len, size_t pos,
         return (int64_t)i;
       }
     }
+    i++;
   }
   return -1;
 }
@@ -78,13 +85,15 @@ CodecType BitstreamParser::DetectCodec(const uint8_t* data, size_t len) {
                data[i + 2] == 0x00 && data[i + 3] == 0x01) {
       header = i + 4;
     }
-    if (header == SIZE_MAX || header >= len || header == last_header) { continue;
-}
+    if (header == SIZE_MAX || header >= len || header == last_header) {
+      continue;
+    }
     last_header = header;
 
     const uint8_t byte = data[header];
-    if (byte & 0x80) { continue;  // forbidden_zero_bit must be zero
-}
+    if (byte & 0x80) {
+      continue;  // forbidden_zero_bit must be zero
+    }
 
     const uint8_t h264_type = byte & 0x1F;
     const uint8_t h265_type = (byte >> 1) & 0x3F;
@@ -102,17 +111,19 @@ CodecType BitstreamParser::DetectCodec(const uint8_t* data, size_t len) {
     inspected++;
   }
 
-  if (h265_score > h264_score) { return CodecType::kH265;
-}
+  if (h265_score > h264_score) {
+    return CodecType::kH265;
+  }
   return CodecType::kH264;
 }
 bool BitstreamParser::ParseFile(const std::string& path,
-                                 const ProgressFn& progress) {
+                                const ProgressFn& progress) {
   ResetStorage();
   error_.clear();
 
-  if (!mapped_.open(path, error_)) { return false;
-}
+  if (!mapped_.open(path, error_)) {
+    return false;
+  }
   base_ = mapped_.data();
   return scan(base_, (size_t)mapped_.size(), progress);
 }
@@ -160,10 +171,12 @@ bool BitstreamParser::scan(const uint8_t* data, size_t len,
       next_report = current_start + report_step;
     }
     size_t search_from = current_start + current_sc_len;
-    if (codec_ == CodecType::kH264 && search_from < len) { search_from += 1;
-}
-    if (codec_ == CodecType::kH265 && search_from < len) { search_from += 2;
-}
+    if (codec_ == CodecType::kH264 && search_from < len) {
+      search_from += 1;
+    }
+    if (codec_ == CodecType::kH265 && search_from < len) {
+      search_from += 2;
+    }
 
     uint8_t next_sc_len = 0;
     int64_t next_start = -1;
@@ -197,8 +210,9 @@ bool BitstreamParser::scan(const uint8_t* data, size_t len,
 
     nals_.push_back(nal);
 
-    if (next_start < 0) { break;
-}
+    if (next_start < 0) {
+      break;
+    }
     current_start = (size_t)next_start;
     current_sc_len = next_sc_len;
   }
@@ -269,14 +283,16 @@ static const char* const h265_nal_names[] = {
 
 std::string NALUnit::TypeName() const {
   if (codec == CodecType::kH264) {
-    if (nal_type <= 30) { return h264_nal_names[nal_type];
-}
+    if (nal_type <= 30) {
+      return h264_nal_names[nal_type];
+    }
     return "RESERVED";
   }
   constexpr size_t k_h265_name_count =
       sizeof(h265_nal_names) / sizeof(h265_nal_names[0]);
-  if (nal_type < k_h265_name_count) { return h265_nal_names[nal_type];
-}
+  if (nal_type < k_h265_name_count) {
+    return h265_nal_names[nal_type];
+  }
   return "UNSPECIFIED";
 }
 
