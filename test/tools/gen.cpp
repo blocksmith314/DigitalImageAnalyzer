@@ -12,6 +12,8 @@ extern "C" {
 #include <stdlib.h>
 #include <string.h>
 
+#include <cstring>
+
 static const uint8_t FONT5x7[][5] = {
     {0x00, 0x00, 0x00, 0x00, 0x00},  // ' '
     {0x00, 0x00, 0x5F, 0x00, 0x00},  // '!'
@@ -194,7 +196,7 @@ static void draw_filled_rect_yuv(AVFrame* frame, int x, int y, int w, int h,
 static void format_number(char* buf, int n, int width) {
   char tmp[32];
   snprintf(tmp, sizeof(tmp), "%d", n);
-  int len = (int)strlen(tmp);
+  int len = (int)std::strlen(tmp);
   int pad = width - len;
   int pos = 0;
   for (int i = 0; i < pad; i++) {
@@ -204,27 +206,22 @@ static void format_number(char* buf, int n, int width) {
   buf[pos + len] = '\0';
 }
 
-
-bool parseInt(const char* s, int& out, int min_val, int max_val)
-{
-    try
-    {
-        size_t pos{};
-        long v = std::stol(s, &pos);
-        if (pos != std::strlen(s))
-            {return false;} 
-        if (v < min_val || v > max_val)
-            {return false;}
-        out = static_cast<int>(v);
-        return true;
+bool parseInt(const char* s, int& out, int min_val, int max_val) {
+  try {
+    size_t pos{};
+    long v = std::stol(s, &pos);
+    if (pos != std::strlen(s)) {
+      return false;
     }
-    catch (...)
-    {
-        return false;
+    if (v < min_val || v > max_val) {
+      return false;
     }
+    out = static_cast<int>(v);
+    return true;
+  } catch (...) {
+    return false;
+  }
 }
-
-
 
 int main(int argc, char** argv) {
   int width = 352;
@@ -235,42 +232,42 @@ int main(int argc, char** argv) {
   const char* codec_name = "libx264";
   const char* output_path = "output.h264";
 
-if (argc >= 2) {
-        if (!parseInt(argv[1], width, 16, 8192)) {
-            fprintf(stderr, "invalid width: %s\n", argv[1]);
-            return 1;
-        }
+  if (argc >= 2) {
+    if (!parseInt(argv[1], width, 16, 8192)) {
+      fprintf(stderr, "invalid width: %s\n", argv[1]);
+      return 1;
     }
-    if (argc >= 3) {
-        if (!parseInt(argv[2], height, 16, 8192)) {
-            fprintf(stderr, "invalid height: %s\n", argv[2]);
-            return 1;
-        }
+  }
+  if (argc >= 3) {
+    if (!parseInt(argv[2], height, 16, 8192)) {
+      fprintf(stderr, "invalid height: %s\n", argv[2]);
+      return 1;
     }
-    if (argc >= 4) {
-        if (!parseInt(argv[3], fps, 1, 240)) {
-            fprintf(stderr, "invalid fps: %s\n", argv[3]);
-            return 1;
-        }
+  }
+  if (argc >= 4) {
+    if (!parseInt(argv[3], fps, 1, 240)) {
+      fprintf(stderr, "invalid fps: %s\n", argv[3]);
+      return 1;
     }
-    if (argc >= 5) {
-        if (!parseInt(argv[4], total_frames, 1, 100000)) { // 至少1帧
-            fprintf(stderr, "invalid total_frames: %s\n", argv[4]);
-            return 1;
-        }
+  }
+  if (argc >= 5) {
+    if (!parseInt(argv[4], total_frames, 1, 100000)) {  // 至少1帧
+      fprintf(stderr, "invalid total_frames: %s\n", argv[4]);
+      return 1;
     }
-    if (argc >= 6) {
-        if (!parseInt(argv[5], keyint, 1, 1000)) {
-            fprintf(stderr, "invalid keyint: %s\n", argv[5]);
-            return 1;
-        }
+  }
+  if (argc >= 6) {
+    if (!parseInt(argv[5], keyint, 1, 1000)) {
+      fprintf(stderr, "invalid keyint: %s\n", argv[5]);
+      return 1;
     }
-    if (argc >= 7) {
-        codec_name = argv[6];
-    }
-    if (argc >= 8) {
-        output_path = argv[7];
-    }
+  }
+  if (argc >= 7) {
+    codec_name = argv[6];
+  }
+  if (argc >= 8) {
+    output_path = argv[7];
+  }
 
   int is_h265 = (strstr(codec_name, "265") != nullptr);
   // int codec_id = is_h265 ? AV_CODEC_ID_HEVC : AV_CODEC_ID_H264;
