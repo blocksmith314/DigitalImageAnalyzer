@@ -5,9 +5,9 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileDialog>
-#include <QFontMetrics>
 #include <QFileInfo>
 #include <QFont>
+#include <QFontMetrics>
 #include <QGroupBox>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -289,7 +289,7 @@ void MainWindow::OpenFile() {
 }
 
 bool MainWindow::LoadFile(const QString& path) {
-  std::string sp = path.toStdString();
+  std::string sp = path.toUtf8().toStdString();
 
   QProgressDialog dlg(QString("Loading %1...").arg(QFileInfo(path).fileName()),
                       "Cancel", 0, 100, this);
@@ -400,7 +400,8 @@ void MainWindow::BuildNalList() {
   // resizeColumnToContents(2) scans every row, which is slow for millions of
   // NAL units. Size the name column from the longest known type name instead.
   const QFontMetrics metrics(nal_list_->font());
-  nal_list_->setColumnWidth(2, metrics.horizontalAdvance("RSV_IRAP_VCL22") + 24);
+  nal_list_->setColumnWidth(2,
+                            metrics.horizontalAdvance("RSV_IRAP_VCL22") + 24);
 }
 
 void MainWindow::UpdateStats() {

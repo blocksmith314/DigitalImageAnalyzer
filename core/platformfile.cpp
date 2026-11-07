@@ -2,6 +2,27 @@
 
 #ifdef _WIN32
 #include <windows.h>
+
+namespace {
+
+std::wstring Utf8ToWide(const std::string& text, bool& ok) {
+  if (text.empty()) {
+    ok = false;
+    return {};
+  }
+  const int size = MultiByteToWideChar(CP_UTF8, 0, text.c_str(),
+                                       (int)text.size(), nullptr, 0);
+  if (size <= 0) {
+    ok = false;
+    return {};
+  }
+  std::wstring wide((size_t)size, L'\0');
+  ok = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), (int)text.size(),
+                           wide.data(), size) > 0;
+  return wide;
+}
+
+}  // namespace
 #else
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -50,8 +71,14 @@ bool MappedFile::open(const std::string& path, std::string& error) {
   close();
 
 #ifdef _WIN32
+  bool path_ok = false;
+  const std::wstring wide_path = Utf8ToWide(path, path_ok);
+  if (!path_ok) {
+    error = "Cannot convert path to UTF-16: " + path;
+    return false;
+  }
   HANDLE file =
-      CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+      CreateFileW(wide_path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
                   OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file == INVALID_HANDLE_VALUE) {
     error = "Cannot open file: " + path;
@@ -64,7 +91,7 @@ bool MappedFile::open(const std::string& path, std::string& error) {
     return false;
   }
   HANDLE mapping =
-      CreateFileMappingA(file, nullptr, PAGE_READONLY, 0, 0, nullptr);
+      CreateFileMappingW(file, nullptr, PAGE_READONLY, 0, 0, nullptr);
   if (!mapping) {
     CloseHandle(file);
     error = "Cannot map file into memory";
@@ -129,7 +156,11 @@ void MappedFile::ReleaseResidentPages() {
   if (!Data || size_ == 0) {
     return;
   }
-#ifndef _WIN32
+#ifdef _WIN32
+  // Windows has no madvise(MADV_DONTNEED). Trim the process working set
+  // instead; the mapped pages are faulted back in on the next access.
+  SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
+#else
   madvise(mapping_, (size_t)size_, MADV_DONTNEED);
 #endif
 }
