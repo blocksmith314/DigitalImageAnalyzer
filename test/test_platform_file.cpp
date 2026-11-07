@@ -39,6 +39,27 @@ TEST(MappedFileTest, MapsExistingFile) {
   std::filesystem::remove(path);
 }
 
+TEST(MappedFileTest, MapsUtf8Path) {
+  const std::filesystem::path path =
+      std::filesystem::temp_directory_path() /
+      std::filesystem::u8path(u8"dia_\u6d4b\u8bd5_\u6587\u4ef6.bin");
+  const uint8_t payload[] = {9, 8, 7};
+  {
+    std::ofstream out(path, std::ios::binary);
+    out.write(reinterpret_cast<const char*>(payload), sizeof(payload));
+  }
+
+  MappedFile file;
+  std::string error;
+  ASSERT_TRUE(file.open(path.u8string(), error)) << error;
+  EXPECT_EQ(file.size(), sizeof(payload));
+  ASSERT_NE(file.data(), nullptr);
+  EXPECT_EQ(std::memcmp(file.data(), payload, sizeof(payload)), 0);
+
+  file.close();
+  std::filesystem::remove(path);
+}
+
 TEST(MappedFileTest, ReportsMissingFile) {
   MappedFile file;
   std::string error;
