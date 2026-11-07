@@ -25,7 +25,7 @@ jobs:
 
       - name: Bundle
         env:
-          DIA_MIN_MACOS: "14.0"
+          DIA_MIN_MACOS: "15.0"
           DIA_STRICT_MINOS: "1"
         run: |
           chmod +x scripts/bundle_macos.sh

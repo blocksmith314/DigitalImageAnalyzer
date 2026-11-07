@@ -157,7 +157,7 @@ cmake --build build
 预编译版本见
 [Releases 页面](https://github.com/blocksmith314/DigitalImageAnalyzer/releases)：
 
-- macOS（Apple Silicon：macOS 14+；Intel：macOS 15+）
+- macOS（Apple Silicon：macOS 15+；Intel：macOS 15+）
 - Linux（AppImage）
 - Windows（x64）
 
