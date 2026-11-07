@@ -175,7 +175,7 @@ previous/next buttons jump (1–1000).
 Prebuilt binaries are attached to the
 [releases page](https://github.com/blocksmith314/DigitalImageAnalyzer/releases):
 
-- macOS (Apple Silicon, macOS 14+; Intel, macOS 15+)
+- macOS (Apple Silicon, macOS 15+; Intel, macOS 15+)
 - Linux (AppImage)
 - Windows (x64)
 
