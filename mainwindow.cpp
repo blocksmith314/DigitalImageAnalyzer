@@ -2,6 +2,8 @@
 
 #include <QApplication>
 #include <QCloseEvent>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileDialog>
@@ -17,6 +19,7 @@
 #include <QListWidget>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QProgressDialog>
 #include <QResizeEvent>
 #include <QSettings>
@@ -26,6 +29,7 @@
 #include <QStatusBar>
 #include <QStyle>
 #include <QToolBar>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <cstdio>
 
@@ -43,6 +47,7 @@ MainWindow::~MainWindow() = default;
 void MainWindow::SetupUi() {
   setWindowTitle("Digital Image Analyzer - H.264/H.265 Bitstream Analyzer");
   resize(1400, 800);
+  setAcceptDrops(true);
 
   QMenu* fileMenu = menuBar()->addMenu("File");
   QAction* openAct = fileMenu->addAction("Open Bitstream...");
@@ -286,6 +291,29 @@ void MainWindow::OpenFile() {
   if (LoadFile(path)) {
     AddRecentFile(path);
   }
+}
+
+void MainWindow::dragEnterEvent(QDragEnterEvent* event) {
+  const QList<QUrl> urls = event->mimeData()->urls();
+  for (const QUrl& url : urls) {
+    if (url.isLocalFile()) {
+      event->acceptProposedAction();
+      return;
+    }
+  }
+  event->ignore();
+}
+
+void MainWindow::dropEvent(QDropEvent* event) {
+  const QList<QUrl> urls = event->mimeData()->urls();
+  for (const QUrl& url : urls) {
+    if (url.isLocalFile()) {
+      LoadFile(url.toLocalFile());
+      event->acceptProposedAction();
+      return;
+    }
+  }
+  event->ignore();
 }
 
 bool MainWindow::LoadFile(const QString& path) {
