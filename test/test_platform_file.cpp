@@ -36,6 +36,7 @@ TEST(MappedFileTest, MapsExistingFile) {
   file.ReleaseResidentPages();  // must not crash and must keep the data valid
   EXPECT_EQ(std::memcmp(file.data(), payload, sizeof(payload)), 0);
 
+  file.close();
   std::filesystem::remove(path);
 }
 
