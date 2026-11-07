@@ -46,6 +46,8 @@ TEST(DecoderTest, DecodesFirstFrame) {
   ASSERT_FALSE(frame.image.isNull());
   EXPECT_EQ(frame.image.width(), 1280);
   EXPECT_EQ(frame.image.height(), 720);
+  // BGRA output avoids the unaccelerated yuv420p -> rgb24 swscale path.
+  EXPECT_EQ(frame.image.format(), QImage::Format_RGB32);
   EXPECT_NEAR(frame.pts_sec, 0.0, 0.001);
 }
 

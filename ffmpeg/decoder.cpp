@@ -105,7 +105,7 @@ bool FFmpegDecoder::OpenFile(const std::string& path, CodecType codec) {
   height_ = impl_->codecCtx->height;
 
   impl_->rgb_buffer_size =
-      av_image_get_buffer_size(AV_PIX_FMT_RGB24, width_, height_, 1);
+      av_image_get_buffer_size(AV_PIX_FMT_BGRA, width_, height_, 1);
   impl_->rgbBuffer = (uint8_t*)av_malloc(impl_->rgb_buffer_size);
 
   if (stream->avg_frame_rate.den && stream->avg_frame_rate.num) {
@@ -166,7 +166,7 @@ bool FFmpegDecoder::ConvertFrame(const AVFrame* frame, DecodedFrame& out) {
   }
   if (!impl_->sws_ctx) {
     impl_->sws_ctx = sws_getContext(width_, height_, impl_->codecCtx->pix_fmt,
-                                    width_, height_, AV_PIX_FMT_RGB24,
+                                    width_, height_, AV_PIX_FMT_BGRA,
                                     SWS_BILINEAR, nullptr, nullptr, nullptr);
     if (!impl_->sws_ctx) {
       return false;
@@ -174,11 +174,11 @@ bool FFmpegDecoder::ConvertFrame(const AVFrame* frame, DecodedFrame& out) {
   }
 
   uint8_t* dst[1] = {impl_->rgbBuffer};
-  int dst_linesize[1] = {width_ * 3};
+  int dst_linesize[1] = {width_ * 4};
   sws_scale(impl_->sws_ctx, frame->data, frame->linesize, 0, height_, dst,
             dst_linesize);
 
-  QImage img(impl_->rgbBuffer, width_, height_, QImage::Format_RGB888);
+  QImage img(impl_->rgbBuffer, width_, height_, QImage::Format_RGB32);
   out.width = width_;
   out.height = height_;
   out.image = img.copy();
@@ -251,14 +251,14 @@ bool FFmpegDecoder::DecodeNextFrame(DecodedFrame& out, bool convert) {
   if (avcodec_receive_frame(impl_->codecCtx, frame) >= 0) {
     if (!impl_->sws_ctx) {
       impl_->sws_ctx = sws_getContext(width_, height_, impl_->codecCtx->pix_fmt,
-                                      width_, height_, AV_PIX_FMT_RGB24,
+                                      width_, height_, AV_PIX_FMT_BGRA,
                                       SWS_BILINEAR, nullptr, nullptr, nullptr);
     }
     uint8_t* dst[1] = {impl_->rgbBuffer};
-    int dst_linesize[1] = {width_ * 3};
+    int dst_linesize[1] = {width_ * 4};
     sws_scale(impl_->sws_ctx, frame->data, frame->linesize, 0, height_, dst,
               dst_linesize);
-    QImage img(impl_->rgbBuffer, width_, height_, QImage::Format_RGB888);
+    QImage img(impl_->rgbBuffer, width_, height_, QImage::Format_RGB32);
     out.pts = frame->pts;
     out.pts_sec =
         (frame->pts != AV_NOPTS_VALUE)
