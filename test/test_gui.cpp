@@ -1,7 +1,10 @@
 #include <gtest/gtest.h>
 
 #include <QApplication>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QLabel>
+#include <QMimeData>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QSlider>
@@ -10,6 +13,7 @@
 #include <QStatusBar>
 #include <QTest>
 #include <QTreeView>
+#include <QUrl>
 #include <fstream>
 #include <string>
 
@@ -175,6 +179,31 @@ TEST(MainWindowTest, LoadsFileAndUpdatesViews) {
     }
   }
   EXPECT_TRUE(status_has_nal_count);
+}
+
+TEST(MainWindowTest, OpensFileByDrop) {
+  if (!exists(data_path("output.h264"))) {
+    GTEST_SKIP() << "H.264 fixture missing";
+  }
+
+  MainWindow window;
+  window.show();
+
+  QMimeData mime;
+  mime.setUrls(
+      {QUrl::fromLocalFile(QString::fromStdString(data_path("output.h264")))});
+
+  QDragEnterEvent enter(QPointF(10, 10), Qt::CopyAction, &mime, Qt::LeftButton,
+                        Qt::NoModifier);
+  QApplication::sendEvent(&window, &enter);
+  EXPECT_TRUE(enter.isAccepted());
+
+  QDropEvent drop(QPointF(10, 10), Qt::CopyAction, &mime, Qt::LeftButton,
+                  Qt::NoModifier);
+  QApplication::sendEvent(&window, &drop);
+  QApplication::processEvents();
+
+  EXPECT_TRUE(window.windowTitle().contains("output.h264"));
 }
 
 TEST(MainWindowTest, StepForwardUsesSpinBoxValue) {
