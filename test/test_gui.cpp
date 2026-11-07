@@ -193,8 +193,13 @@ TEST(MainWindowTest, OpensFileByDrop) {
   mime.setUrls(
       {QUrl::fromLocalFile(QString::fromStdString(data_path("output.h264")))});
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
   QDragEnterEvent enter(QPointF(10, 10), Qt::CopyAction, &mime, Qt::LeftButton,
                         Qt::NoModifier);
+#else
+  QDragEnterEvent enter(QPoint(10, 10), Qt::CopyAction, &mime, Qt::LeftButton,
+                        Qt::NoModifier);
+#endif
   QApplication::sendEvent(&window, &enter);
   EXPECT_TRUE(enter.isAccepted());
 
