@@ -52,6 +52,7 @@ class MainWindow : public QMainWindow {
   void ToggleFullscreen();
   void OnPlayerTick();
   void OnSpeedChanged(int index);
+  void ShowAbout();
 
  private:
   static constexpr int MAX_RECENT_FILES = 10;

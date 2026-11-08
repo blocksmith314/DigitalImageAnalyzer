@@ -1,0 +1,5 @@
+#pragma once
+
+#define DIA_VERSION "@PROJECT_VERSION@"
+#define DIA_GIT_COMMIT "@DIA_GIT_COMMIT@"
+#define DIA_GIT_COMMIT_DATE "@DIA_GIT_COMMIT_DATE@"
