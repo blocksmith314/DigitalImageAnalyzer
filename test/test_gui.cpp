@@ -4,6 +4,7 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QLabel>
+#include <QMenuBar>
 #include <QMimeData>
 #include <QPushButton>
 #include <QSignalSpy>
@@ -179,6 +180,17 @@ TEST(MainWindowTest, LoadsFileAndUpdatesViews) {
     }
   }
   EXPECT_TRUE(status_has_nal_count);
+}
+
+TEST(MainWindowTest, HasHelpMenu) {
+  MainWindow window;
+  bool has_help = false;
+  for (QAction* action : window.menuBar()->actions()) {
+    if (action->text().contains("Help")) {
+      has_help = true;
+    }
+  }
+  EXPECT_TRUE(has_help);
 }
 
 TEST(MainWindowTest, OpensFileByDrop) {

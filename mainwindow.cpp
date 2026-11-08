@@ -28,6 +28,7 @@
 #include <QSplitter>
 #include <QStatusBar>
 #include <QStyle>
+#include <QSysInfo>
 #include <QToolBar>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -36,6 +37,7 @@
 #include "annexb.h"
 #include "audio.h"
 #include "nallistmodel.h"
+#include "version.h"
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), parser_(CodecType::kH264) {
@@ -266,6 +268,10 @@ void MainWindow::SetupUi() {
   connect(bottomSplit, &QSplitter::splitterMoved, this,
           [this](int, int) { SyncSplitterWidths(false); });
 
+  QMenu* helpMenu = menuBar()->addMenu("Help");
+  QAction* aboutAct = helpMenu->addAction("About Digital Image Analyzer");
+  connect(aboutAct, &QAction::triggered, this, &MainWindow::ShowAbout);
+
   setCentralWidget(mainSplit);
   top_split_ = topSplit;
   bottom_split_ = bottomSplit;
@@ -291,6 +297,15 @@ void MainWindow::OpenFile() {
   if (LoadFile(path)) {
     AddRecentFile(path);
   }
+}
+
+void MainWindow::ShowAbout() {
+  QMessageBox::about(this, "About Digital Image Analyzer",
+                     QString("<h3>Digital Image Analyzer %1</h3>"
+                             "<p>H.264/H.265 bitstream analyzer.</p>"
+                             "<p>Commit: %2 (%3)<br>Qt: %4<br>OS: %5</p>")
+                         .arg(DIA_VERSION, DIA_GIT_COMMIT, DIA_GIT_COMMIT_DATE,
+                              qVersion(), QSysInfo::prettyProductName()));
 }
 
 void MainWindow::dragEnterEvent(QDragEnterEvent* event) {

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(DigitalImageAnalyzer VERSION 0.1.1 LANGUAGES CXX)
+project(DigitalImageAnalyzer VERSION 0.1.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,6 +10,29 @@ set(CMAKE_AUTORCC ON)
 find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia Test)
 
 qt_standard_project_setup()
+
+# Version metadata for --version and the About dialog. Falls back to
+# "unknown" when the sources are built outside a git checkout.
+execute_process(
+    COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE DIA_GIT_COMMIT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+execute_process(
+    COMMAND git log -1 --format=%cs
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE DIA_GIT_COMMIT_DATE
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+if(NOT DIA_GIT_COMMIT)
+    set(DIA_GIT_COMMIT "unknown")
+endif()
+if(NOT DIA_GIT_COMMIT_DATE)
+    set(DIA_GIT_COMMIT_DATE "unknown")
+endif()
+configure_file(core/version.h.in ${CMAKE_BINARY_DIR}/generated/version.h @ONLY)
+include_directories(${CMAKE_BINARY_DIR}/generated)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(AVFORMAT REQUIRED IMPORTED_TARGET libavformat)
@@ -295,4 +318,9 @@ if (BUILD_TEST)
     gtest_discover_tests(test_gui PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_dependencies(all_tests test_gui)
+
+    add_test(NAME app_version
+             COMMAND $<TARGET_FILE:DigitalImageAnalyzer> --version)
+    set_tests_properties(app_version PROPERTIES
+        PASS_REGULAR_EXPRESSION "Digital Image Analyzer ${PROJECT_VERSION}")
 endif ()
