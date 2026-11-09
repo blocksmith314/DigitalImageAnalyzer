@@ -53,6 +53,7 @@ class MainWindow : public QMainWindow {
   void OnPlayerTick();
   void OnSpeedChanged(int index);
   void ShowAbout();
+  void ShowShortcuts();
 
  private:
   static constexpr int MAX_RECENT_FILES = 10;

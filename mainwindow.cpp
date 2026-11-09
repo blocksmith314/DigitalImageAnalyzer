@@ -2,6 +2,7 @@
 
 #include <QApplication>
 #include <QCloseEvent>
+#include <QDesktopServices>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QElapsedTimer>
@@ -269,6 +270,19 @@ void MainWindow::SetupUi() {
           [this](int, int) { SyncSplitterWidths(false); });
 
   QMenu* helpMenu = menuBar()->addMenu("Help");
+  QAction* shortcutsAct = helpMenu->addAction("Keyboard Shortcuts");
+  connect(shortcutsAct, &QAction::triggered, this, &MainWindow::ShowShortcuts);
+  QAction* docsAct = helpMenu->addAction("Documentation");
+  connect(docsAct, &QAction::triggered, this, []() {
+    QDesktopServices::openUrl(
+        QUrl("https://github.com/blocksmith314/DigitalImageAnalyzer#readme"));
+  });
+  QAction* issueAct = helpMenu->addAction("Report an Issue");
+  connect(issueAct, &QAction::triggered, this, []() {
+    QDesktopServices::openUrl(
+        QUrl("https://github.com/blocksmith314/DigitalImageAnalyzer/issues"));
+  });
+  helpMenu->addSeparator();
   QAction* aboutAct = helpMenu->addAction("About Digital Image Analyzer");
   connect(aboutAct, &QAction::triggered, this, &MainWindow::ShowAbout);
 
@@ -297,6 +311,36 @@ void MainWindow::OpenFile() {
   if (LoadFile(path)) {
     AddRecentFile(path);
   }
+}
+
+void MainWindow::ShowShortcuts() {
+  const auto key = [](QKeySequence::StandardKey standard) {
+    return QKeySequence(standard).toString(QKeySequence::NativeText);
+  };
+  const auto keyOf = [](int key_value) {
+    return QKeySequence(key_value).toString(QKeySequence::NativeText);
+  };
+  const auto keyCombo = [](Qt::Key key_value) {
+    return QKeySequence(QKeyCombination(Qt::CTRL, key_value))
+        .toString(QKeySequence::NativeText);
+  };
+
+  const QString text =
+      QString(
+          "<h3>Keyboard Shortcuts</h3>"
+          "<table cellspacing='4'>"
+          "<tr><td>Open file</td><td><b>%1</b></td></tr>"
+          "<tr><td>Recent files</td><td><b>%2</b></td></tr>"
+          "<tr><td>Play / pause</td><td><b>%3</b></td></tr>"
+          "<tr><td>Previous / next frame</td><td><b>%4 / %5</b></td></tr>"
+          "<tr><td>Leave fullscreen</td><td><b>%6</b></td></tr>"
+          "<tr><td>Quit</td><td><b>%7</b></td></tr>"
+          "</table>")
+          .arg(key(QKeySequence::Open),
+               keyCombo(Qt::Key_1) + " ... " + keyCombo(Qt::Key_9),
+               keyOf(Qt::Key_Space), keyOf(Qt::Key_Left), keyOf(Qt::Key_Right),
+               keyOf(Qt::Key_Escape), key(QKeySequence::Quit));
+  QMessageBox::information(this, "Keyboard Shortcuts", text);
 }
 
 void MainWindow::ShowAbout() {
