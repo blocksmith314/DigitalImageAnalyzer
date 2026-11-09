@@ -4,6 +4,7 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QLabel>
+#include <QMenu>
 #include <QMenuBar>
 #include <QMimeData>
 #include <QPushButton>
@@ -191,6 +192,24 @@ TEST(MainWindowTest, HasHelpMenu) {
     }
   }
   EXPECT_TRUE(has_help);
+}
+
+TEST(MainWindowTest, HelpMenuHasEntries) {
+  MainWindow window;
+  QMenu* help = nullptr;
+  for (QAction* action : window.menuBar()->actions()) {
+    if (action->text().contains("Help")) {
+      help = action->menu();
+    }
+  }
+  ASSERT_NE(help, nullptr);
+  QStringList entries;
+  for (QAction* action : help->actions()) {
+    entries << action->text();
+  }
+  EXPECT_TRUE(entries.contains("Keyboard Shortcuts"));
+  EXPECT_TRUE(entries.contains("Documentation"));
+  EXPECT_TRUE(entries.contains("Report an Issue"));
 }
 
 TEST(MainWindowTest, OpensFileByDrop) {
