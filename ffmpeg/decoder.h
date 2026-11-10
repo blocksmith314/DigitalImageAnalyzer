@@ -44,6 +44,7 @@ class FFmpegDecoder {
   int width() const { return width_; }
   int height() const { return height_; }
   double FrameRate() const { return frame_rate_; }
+  double DurationSec() const { return duration_sec_; }
   int CurrentFrameIndex() const { return current_frame_; }
   const std::string& LastError() const { return error_; }
 
@@ -57,6 +58,7 @@ class FFmpegDecoder {
   int height_ = 0;
   int current_frame_ = 0;
   double frame_rate_ = 30.0;
+  double duration_sec_ = 0.0;
   std::string path_;
   CodecType codec_ = CodecType::kH264;
   std::string error_;

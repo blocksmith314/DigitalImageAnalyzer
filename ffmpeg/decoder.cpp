@@ -117,6 +117,15 @@ bool FFmpegDecoder::OpenFile(const std::string& path, CodecType codec) {
     frame_rate_ = 30.0;
   }
 
+  duration_sec_ = 0.0;
+  if (impl_->fmtCtx->duration != AV_NOPTS_VALUE &&
+      impl_->fmtCtx->duration > 0) {
+    duration_sec_ = (double)impl_->fmtCtx->duration / AV_TIME_BASE;
+  } else if (stream->duration != AV_NOPTS_VALUE && stream->duration > 0 &&
+             stream->time_base.den > 0) {
+    duration_sec_ = (double)stream->duration * av_q2d(stream->time_base);
+  }
+
   const char* fmtName = (impl_->fmtCtx->iformat && impl_->fmtCtx->iformat->name)
                             ? impl_->fmtCtx->iformat->name
                             : "";
@@ -133,6 +142,8 @@ bool FFmpegDecoder::OpenFile(const std::string& path, CodecType codec) {
 bool FFmpegDecoder::HasTimestamps() const { return impl_ && !impl_->is_raw; }
 
 void FFmpegDecoder::close() {
+  duration_sec_ = 0.0;
+  frame_rate_ = 30.0;
   if (impl_) {
     if (impl_->sws_ctx) {
       sws_freeContext(impl_->sws_ctx);

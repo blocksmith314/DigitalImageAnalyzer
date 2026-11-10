@@ -54,8 +54,11 @@ class MainWindow : public QMainWindow {
   void OnSpeedChanged(int index);
   void ShowAbout();
   void ShowShortcuts();
+  void UpdatePositionLabel();
 
  private:
+  enum class ProgressMode { kFrames, kTime };
+
   static constexpr int MAX_RECENT_FILES = 10;
 
   void SetupUi();
@@ -110,6 +113,8 @@ class MainWindow : public QMainWindow {
   QSlider* seek_slider_ = nullptr;
   QComboBox* speed_combo_ = nullptr;
   QSpinBox* step_spin_ = nullptr;
+  QComboBox* progress_mode_combo_ = nullptr;
+  ProgressMode progress_mode_ = ProgressMode::kFrames;
 
   bool is_playing_ = false;
   int total_frames_ = 0;

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <QApplication>
+#include <QComboBox>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QLabel>
@@ -8,6 +9,7 @@
 #include <QMenuBar>
 #include <QMimeData>
 #include <QPushButton>
+#include <QSettings>
 #include <QSignalSpy>
 #include <QSlider>
 #include <QSpinBox>
@@ -212,6 +214,33 @@ TEST(MainWindowTest, HelpMenuHasEntries) {
   EXPECT_TRUE(entries.contains("Report an Issue"));
 }
 
+TEST(MainWindowTest, ProgressModeSwitchesToTime) {
+  if (!exists(data_path("sample_720p.mp4"))) {
+    GTEST_SKIP() << "MP4 fixture missing";
+  }
+
+  QSettings().setValue("progressMode", 0);
+  MainWindow window;
+  window.show();
+  ASSERT_TRUE(
+      window.LoadFile(QString::fromStdString(data_path("sample_720p.mp4"))));
+  QApplication::processEvents();
+
+  auto* combo = window.findChild<QComboBox*>("progressMode");
+  ASSERT_NE(combo, nullptr);
+  QLabel* label = frameLabel(window);
+  ASSERT_NE(label, nullptr);
+
+  combo->setCurrentIndex(1);
+  QApplication::processEvents();
+  EXPECT_TRUE(label->text().contains(":")) << label->text().toStdString();
+  EXPECT_TRUE(label->text().contains("/")) << label->text().toStdString();
+
+  combo->setCurrentIndex(0);
+  QApplication::processEvents();
+  EXPECT_EQ(label->text(), "Frame: 1 / 10");
+}
+
 TEST(MainWindowTest, OpensFileByDrop) {
   if (!exists(data_path("output.h264"))) {
     GTEST_SKIP() << "H.264 fixture missing";
@@ -247,6 +276,7 @@ TEST(MainWindowTest, StepForwardUsesSpinBoxValue) {
     GTEST_SKIP() << "MP4 fixture missing";
   }
 
+  QSettings().setValue("progressMode", 0);
   MainWindow window;
   window.show();
   ASSERT_TRUE(

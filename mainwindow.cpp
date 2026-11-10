@@ -33,12 +33,40 @@
 #include <QToolBar>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <cmath>
 #include <cstdio>
 
 #include "annexb.h"
 #include "audio.h"
 #include "nallistmodel.h"
 #include "version.h"
+
+namespace {
+
+QString FormatDuration(double seconds) {
+  if (seconds < 0.0) {
+    seconds = 0.0;
+  }
+  const qint64 total_ms = static_cast<qint64>(std::llround(seconds * 1000.0));
+  const qint64 ms = total_ms % 1000;
+  const qint64 total_s = total_ms / 1000;
+  const qint64 s = total_s % 60;
+  const qint64 m = (total_s / 60) % 60;
+  const qint64 h = total_s / 3600;
+  if (h > 0) {
+    return QString("%1:%2:%3.%4")
+        .arg(h)
+        .arg(m, 2, 10, QChar('0'))
+        .arg(s, 2, 10, QChar('0'))
+        .arg(ms, 3, 10, QChar('0'));
+  }
+  return QString("%1:%2.%3")
+      .arg(m, 2, 10, QChar('0'))
+      .arg(s, 2, 10, QChar('0'))
+      .arg(ms, 3, 10, QChar('0'));
+}
+
+}  // namespace
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), parser_(CodecType::kH264) {
@@ -225,6 +253,25 @@ void MainWindow::SetupUi() {
   controlRow->addWidget(seek_slider_, 1);
   frame_info_label_->setMinimumWidth(0);
   controlRow->addWidget(frame_info_label_);
+
+  progress_mode_combo_ = new QComboBox(this);
+  progress_mode_combo_->setObjectName("progressMode");
+  progress_mode_combo_->addItem("Frame");
+  progress_mode_combo_->addItem("Time");
+  progress_mode_combo_->setToolTip("Show the position as frame number or time");
+  const int saved_mode = QSettings().value("progressMode", 0).toInt();
+  progress_mode_ =
+      saved_mode == 1 ? ProgressMode::kTime : ProgressMode::kFrames;
+  progress_mode_combo_->setCurrentIndex(saved_mode == 1 ? 1 : 0);
+  connect(progress_mode_combo_,
+          QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          [this](int index) {
+            progress_mode_ =
+                index == 1 ? ProgressMode::kTime : ProgressMode::kFrames;
+            QSettings().setValue("progressMode", index);
+            UpdatePositionLabel();
+          });
+  controlRow->addWidget(progress_mode_combo_);
 
   QGroupBox* playerGroup = new QGroupBox("Video Player");
   QVBoxLayout* playerLayout = new QVBoxLayout(playerGroup);
@@ -631,8 +678,7 @@ void MainWindow::ShowFrame(const QImage& image, int frame_idx) {
   QImage scaled =
       image.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation);
   video_label_->setPixmap(QPixmap::fromImage(scaled));
-  frame_info_label_->setText(
-      QString("Frame: %1 / %2").arg(frame_idx + 1).arg(total_frames_));
+  UpdatePositionLabel();
   if (!seek_slider_->isSliderDown()) {
     QSignalBlocker blocker(seek_slider_);
     seek_slider_->setValue(frame_idx);
@@ -640,6 +686,50 @@ void MainWindow::ShowFrame(const QImage& image, int frame_idx) {
   HighlightFrame(frame_idx);
   if (fullscreen_) {
     UpdateFullscreenFrame();
+  }
+}
+
+void MainWindow::UpdatePositionLabel() {
+  if (!frame_info_label_) {
+    return;
+  }
+  if (total_frames_ <= 0) {
+    frame_info_label_->setText("Frame: - / -");
+    return;
+  }
+
+  if (progress_mode_ == ProgressMode::kTime) {
+    const bool has_timestamps = player_decoder_.HasTimestamps();
+    double total = player_decoder_.DurationSec();
+    if (total <= 0.0 && frame_rate_ > 0.0) {
+      total = total_frames_ / frame_rate_;
+    }
+    double current = -1.0;
+    if (has_timestamps) {
+      current = current_pts_;
+    } else if (frame_rate_ > 0.0) {
+      current = qMax(0, current_frame_index_) / frame_rate_;
+    }
+    if (total > 0.0 && current >= 0.0) {
+      QString text = QString("%1 / %2").arg(FormatDuration(current),
+                                            FormatDuration(total));
+      if (!has_timestamps) {
+        text += " (approx)";
+      }
+      frame_info_label_->setText(text);
+      if (seek_slider_) {
+        seek_slider_->setToolTip(
+            QString("Time: %1").arg(FormatDuration(current)));
+      }
+      return;
+    }
+  }
+
+  frame_info_label_->setText(QString("Frame: %1 / %2")
+                                 .arg(current_frame_index_ + 1)
+                                 .arg(total_frames_));
+  if (seek_slider_) {
+    seek_slider_->setToolTip(QString());
   }
 }
 

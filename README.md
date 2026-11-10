@@ -86,6 +86,7 @@ the player jumps to the frame that contains it.
   bitrate, GOP size and NAL size distribution
 - Detailed view for SPS/PPS/VPS fields, SEI payloads and slice information
 - Frame-type colour coding and linked highlighting between table and player
+- Player position shown as frame number or time (switchable, persisted)
 
 ### Playback
 
