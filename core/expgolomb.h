@@ -14,6 +14,7 @@ class RbspBitReader {
   bool ReadBit();
   uint64_t ReadBits(int n);
   uint64_t ReadUe();
+  size_t BitsRead() const { return bits_read_; }
   bool eof() const { return eof_ && bits_left_ == 0; }
 
  private:
@@ -27,6 +28,7 @@ class RbspBitReader {
   uint8_t prev1_ = 0;
   uint8_t prev2_ = 0;
   bool eof_ = false;
+  size_t bits_read_ = 0;
 };
 
 class BitReader {

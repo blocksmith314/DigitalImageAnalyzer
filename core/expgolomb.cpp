@@ -59,6 +59,7 @@ bool RbspBitReader::ReadBit() {
   const bool bit = (cur_ & 0x80) != 0;
   cur_ = (uint8_t)(cur_ << 1);
   bits_left_--;
+  bits_read_++;
   return bit;
 }
 

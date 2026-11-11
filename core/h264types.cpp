@@ -316,8 +316,18 @@ bool ParseH264Pps(const NALUnit& nal, const uint8_t* data, H264PPS& out) {
   return true;
 }
 
+namespace {
+
+int64_t ReadSe(RbspBitReader& br) {
+  const uint64_t ue = br.ReadUe();
+  return (ue & 1) ? (int64_t)((ue + 1) / 2) : -(int64_t)(ue / 2);
+}
+
+}  // namespace
+
 bool ParseH264SliceHeader(const NALUnit& nal, const uint8_t* data,
-                          const H264SPS& sps, H264SliceHeader& out) {
+                          const H264SPS& sps, const H264PPS* pps,
+                          H264SliceHeader& out) {
   if (nal.size < nal.start_code_len + 5) {
     return false;
   }
@@ -326,24 +336,136 @@ bool ParseH264SliceHeader(const NALUnit& nal, const uint8_t* data,
 
   out.first_mb_in_slice = (uint32_t)br.ReadUe();
   out.slice_type = (uint32_t)br.ReadUe();
-  (void)br.ReadUe();  // pic_parameter_set_id
+  out.pps_id = (uint32_t)br.ReadUe();
 
   const uint32_t frame_num_bits = sps.log2_max_frame_num_minus4 + 4;
   out.frame_num = (uint32_t)br.ReadBits(frame_num_bits);
 
   if (!sps.frame_mbs_only_flag) {
-    const bool field_pic_flag = br.ReadBit();
-    if (field_pic_flag) {
-      br.ReadBit();  // bottom_field_flag
+    out.field_pic_flag = br.ReadBit();
+    if (out.field_pic_flag) {
+      out.bottom_field_flag = br.ReadBit();
     }
   }
   if (nal.nal_type == 5) {
-    (void)br.ReadUe();  // idr_pic_id
+    out.idr_pic_id = (uint32_t)br.ReadUe();
   }
 
   if (sps.pic_order_cnt_type == 0) {
     const uint32_t poc_bits = sps.log2_max_pic_order_cnt_lsb_minus4 + 4;
     out.pic_order_cnt_lsb = (uint32_t)br.ReadBits(poc_bits);
+    if (pps && pps->bottom_field_pic_order_in_frame_present_flag &&
+        !out.field_pic_flag) {
+      out.delta_pic_order_cnt_bottom = (int32_t)ReadSe(br);
+    }
+  } else if (sps.pic_order_cnt_type == 1 &&
+             !sps.delta_pic_order_always_zero_flag) {
+    out.delta_pic_order_cnt0 = (int32_t)ReadSe(br);
+    if (pps && pps->bottom_field_pic_order_in_frame_present_flag &&
+        !out.field_pic_flag) {
+      out.delta_pic_order_cnt1 = (int32_t)ReadSe(br);
+    }
   }
+
+  if (pps && pps->redundant_pic_cnt_present_flag) {
+    out.redundant_pic_cnt = (uint32_t)br.ReadUe();
+  }
+
+  const int type = (int)(out.slice_type % 5);
+  const bool is_b = type == 1;
+  const bool is_i = type == 2;
+  const bool is_sp = type == 3;
+  const bool is_si = type == 4;
+
+  if (is_b) {
+    out.direct_spatial_mv_pred_flag = br.ReadBit();
+  }
+
+  out.num_ref_idx_active_override_flag = br.ReadBit();
+  if (out.num_ref_idx_active_override_flag) {
+    out.num_ref_idx_l0_active_minus1 = (uint32_t)br.ReadUe();
+    if (is_b) {
+      out.num_ref_idx_l1_active_minus1 = (uint32_t)br.ReadUe();
+    }
+  } else if (pps) {
+    out.num_ref_idx_l0_active_minus1 =
+        pps->num_ref_idx_l0_default_active_minus1;
+    out.num_ref_idx_l1_active_minus1 =
+        pps->num_ref_idx_l1_default_active_minus1;
+  }
+
+  if (!is_i && !is_si && br.ReadBit()) {
+    uint32_t idc = (uint32_t)br.ReadUe();
+    while (idc != 3 && !br.eof()) {
+      (void)br.ReadUe();
+      out.ref_pic_list_modifications++;
+      idc = (uint32_t)br.ReadUe();
+    }
+  }
+  if (is_b && br.ReadBit()) {
+    uint32_t idc = (uint32_t)br.ReadUe();
+    while (idc != 3 && !br.eof()) {
+      (void)br.ReadUe();
+      out.ref_pic_list_modifications++;
+      idc = (uint32_t)br.ReadUe();
+    }
+  }
+
+  const bool weighted =
+      pps && ((pps->weighted_pred_flag && (type == 0 || is_sp)) ||
+              (pps->weighted_bipred_idc == 1 && is_b));
+  if (weighted) {
+    // pred_weight_table is not decoded; later fields would be misaligned.
+    out.partial = true;
+    out.header_bits = (uint32_t)br.BitsRead();
+    return true;
+  }
+
+  if (nal.nal_type == 5) {
+    out.no_output_of_prior_pics_flag = br.ReadBit();
+    out.long_term_reference_flag = br.ReadBit();
+  } else if (br.ReadBit()) {  // adaptive_ref_pic_marking_mode_flag
+    uint32_t op = (uint32_t)br.ReadUe();
+    while (op != 0 && !br.eof()) {
+      switch (op) {
+        case 1:
+        case 3:
+          (void)br.ReadUe();
+          (void)br.ReadUe();
+          break;
+        case 2:
+        case 4:
+        case 6:
+          (void)br.ReadUe();
+          break;
+        case 5:
+          (void)br.ReadUe();
+          break;
+        default:
+          break;
+      }
+      out.adaptive_marking_ops++;
+      op = (uint32_t)br.ReadUe();
+    }
+  }
+
+  if (pps && pps->entropy_coding_mode_flag && !is_i && !is_si) {
+    out.cabac_init_idc = (int32_t)br.ReadUe();
+  }
+  out.slice_qp_delta = (int32_t)ReadSe(br);
+  if (is_sp || is_si) {
+    out.sp_for_switch_flag = br.ReadBit();
+    out.slice_qs_delta = (int32_t)ReadSe(br);
+  }
+
+  if (pps && pps->deblocking_filter_control_present_flag) {
+    out.disable_deblocking_filter_idc = (int32_t)br.ReadUe();
+    if (out.disable_deblocking_filter_idc == 0) {
+      out.slice_alpha_c0_offset_div2 = (int32_t)ReadSe(br);
+      out.slice_beta_offset_div2 = (int32_t)ReadSe(br);
+    }
+  }
+
+  out.header_bits = (uint32_t)br.BitsRead();
   return true;
 }

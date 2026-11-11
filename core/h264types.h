@@ -92,21 +92,54 @@ struct H264SliceHeader {
   uint32_t slice_type = 0;
   uint32_t frame_num = 0;
   uint32_t pic_order_cnt_lsb = 0;
+  uint32_t pps_id = 0;
+  bool field_pic_flag = false;
+  bool bottom_field_flag = false;
+  uint32_t idr_pic_id = 0;
+  int32_t delta_pic_order_cnt_bottom = 0;
+  int32_t delta_pic_order_cnt0 = 0;
+  int32_t delta_pic_order_cnt1 = 0;
+  uint32_t redundant_pic_cnt = 0;
+  bool direct_spatial_mv_pred_flag = false;
+  bool num_ref_idx_active_override_flag = false;
+  uint32_t num_ref_idx_l0_active_minus1 = 0;
+  uint32_t num_ref_idx_l1_active_minus1 = 0;
+  uint32_t ref_pic_list_modifications = 0;
+  bool no_output_of_prior_pics_flag = false;
+  bool long_term_reference_flag = false;
+  uint32_t adaptive_marking_ops = 0;
+  int32_t cabac_init_idc = 0;
+  int32_t slice_qp_delta = 0;
+  bool sp_for_switch_flag = false;
+  int32_t slice_qs_delta = 0;
+  int32_t disable_deblocking_filter_idc = 0;
+  int32_t slice_alpha_c0_offset_div2 = 0;
+  int32_t slice_beta_offset_div2 = 0;
+  uint32_t header_bits = 0;
+  bool partial = false;
   bool IsIFrame() const { return slice_type % 5 == 2; }
   bool IsBFrame() const { return slice_type % 5 == 1; }
   bool IsPFrame() const {
     return slice_type % 5 == 0 || slice_type % 5 == 3 || slice_type % 5 == 4;
   }
   char FrameTypeChar() const {
-    if (IsIFrame()) { return 'I';
-}
-    if (IsBFrame()) { return 'B';
-}
+    if (IsIFrame()) {
+      return 'I';
+    }
+    if (IsBFrame()) {
+      return 'B';
+    }
     return 'P';
   }
 };
 
 bool ParseH264SliceHeader(const NALUnit& nal, const uint8_t* data,
-                             const H264SPS& sps, H264SliceHeader& out);
+                          const H264SPS& sps, const H264PPS* pps,
+                          H264SliceHeader& out);
+
+inline bool ParseH264SliceHeader(const NALUnit& nal, const uint8_t* data,
+                                 const H264SPS& sps, H264SliceHeader& out) {
+  return ParseH264SliceHeader(nal, data, sps, nullptr, out);
+}
 
 #endif  // DIA_CORE_H264TYPES_H_

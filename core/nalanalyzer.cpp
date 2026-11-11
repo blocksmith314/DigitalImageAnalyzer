@@ -1,6 +1,7 @@
 #include "nalanalyzer.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <sstream>
 
 #include "bitstreamparser.h"
@@ -329,6 +330,11 @@ bool NALAnalyzer::AnalyzeAll(BitstreamParser& parser,
   return true;
 }
 
+static const char* H264SliceTypeName(uint32_t slice_type) {
+  static const char* const kNames[5] = {"P", "B", "I", "SP", "SI"};
+  return kNames[slice_type % 5];
+}
+
 NALAnalysis NALAnalyzer::AnalyzeOne(const NALUnit& nal,
                                     const uint8_t* data) const {
   NALAnalysis a;
@@ -430,12 +436,148 @@ NALAnalysis NALAnalyzer::AnalyzeOne(const NALUnit& nal,
         break;
       }
       case 5:
-        oss << "=== H.264 IDR Slice ===\nType: Instantaneous Decoding Refresh "
-               "(keyframe)\n";
-        break;
       case 1:
-        oss << "=== H.264 Non-IDR Slice ===\n";
+      case 2:
+      case 3:
+      case 4: {
+        const bool idr = nal.nal_type == 5;
+        oss << "=== H.264 " << (idr ? "IDR Slice" : "Slice") << " ===\n";
+        if (idr) {
+          oss << "Type: Instantaneous Decoding Refresh (keyframe)\n";
+        }
+
+        const size_t payload_offset = nal.start_code_len + 1;
+        size_t header_bytes = 0;
+
+        // pic_parameter_set_id comes before any SPS-dependent field.
+        uint32_t pps_id = 0;
+        if (nal.size > payload_offset) {
+          RbspBitReader quick(data + payload_offset, nal.size - payload_offset);
+          (void)quick.ReadUe();
+          (void)quick.ReadUe();
+          pps_id = (uint32_t)quick.ReadUe();
+        }
+
+        const H264SPS* sps = nullptr;
+        const H264PPS* pps = nullptr;
+        auto pps_it = h264_pps_map_.find((int)pps_id);
+        if (pps_it != h264_pps_map_.end()) {
+          pps = &pps_it->second;
+          auto sps_it = h264_sps_map_.find((int)pps->sps_id);
+          if (sps_it != h264_sps_map_.end()) {
+            sps = &sps_it->second;
+          }
+        }
+
+        if (sps) {
+          H264SliceHeader sh;
+          if (ParseH264SliceHeader(nal, data, *sps, pps, sh)) {
+            header_bytes = (sh.header_bits + 7) / 8;
+            oss << "first_mb_in_slice: " << sh.first_mb_in_slice << "\n";
+            oss << "slice_type: " << sh.slice_type << " ("
+                << H264SliceTypeName(sh.slice_type)
+                << (sh.slice_type >= 5 ? ", all slices" : "") << ")\n";
+            oss << "pic_parameter_set_id: " << sh.pps_id << "\n";
+            oss << "frame_num: " << sh.frame_num << "\n";
+            if (!sps->frame_mbs_only_flag) {
+              oss << "field_pic_flag: " << sh.field_pic_flag
+                  << "  bottom_field_flag: " << sh.bottom_field_flag << "\n";
+            }
+            if (idr) {
+              oss << "idr_pic_id: " << sh.idr_pic_id << "\n";
+            }
+            if (sps->pic_order_cnt_type == 0) {
+              oss << "pic_order_cnt_lsb: " << sh.pic_order_cnt_lsb;
+              if (pps && pps->bottom_field_pic_order_in_frame_present_flag &&
+                  !sh.field_pic_flag) {
+                oss << "  delta_pic_order_cnt_bottom: "
+                    << sh.delta_pic_order_cnt_bottom;
+              }
+              oss << "\n";
+            } else if (sps->pic_order_cnt_type == 1 &&
+                       !sps->delta_pic_order_always_zero_flag) {
+              oss << "delta_pic_order_cnt[0]: " << sh.delta_pic_order_cnt0
+                  << "  [1]: " << sh.delta_pic_order_cnt1 << "\n";
+            }
+            if (pps && pps->redundant_pic_cnt_present_flag) {
+              oss << "redundant_pic_cnt: " << sh.redundant_pic_cnt << "\n";
+            }
+            if (sh.slice_type % 5 == 1) {
+              oss << "direct_spatial_mv_pred_flag: "
+                  << sh.direct_spatial_mv_pred_flag << "\n";
+            }
+            oss << "num_ref_idx_active_override_flag: "
+                << sh.num_ref_idx_active_override_flag
+                << "  l0=" << sh.num_ref_idx_l0_active_minus1
+                << "  l1=" << sh.num_ref_idx_l1_active_minus1 << "\n";
+            oss << "ref_pic_list_modifications: "
+                << sh.ref_pic_list_modifications << "\n";
+            if (idr) {
+              oss << "no_output_of_prior_pics_flag: "
+                  << sh.no_output_of_prior_pics_flag
+                  << "  long_term_reference_flag: "
+                  << sh.long_term_reference_flag << "\n";
+            } else {
+              oss << "adaptive marking operations: " << sh.adaptive_marking_ops
+                  << "\n";
+            }
+            if (pps && pps->entropy_coding_mode_flag &&
+                sh.slice_type % 5 != 2 && sh.slice_type % 5 != 4) {
+              oss << "cabac_init_idc: " << sh.cabac_init_idc << "\n";
+            }
+            oss << "slice_qp_delta: " << sh.slice_qp_delta << "\n";
+            if (sh.slice_type % 5 == 3 || sh.slice_type % 5 == 4) {
+              oss << "sp_for_switch_flag: " << sh.sp_for_switch_flag
+                  << "  slice_qs_delta: " << sh.slice_qs_delta << "\n";
+            }
+            if (pps && pps->deblocking_filter_control_present_flag) {
+              oss << "disable_deblocking_filter_idc: "
+                  << sh.disable_deblocking_filter_idc
+                  << "  alpha: " << sh.slice_alpha_c0_offset_div2
+                  << "  beta: " << sh.slice_beta_offset_div2 << "\n";
+            }
+            if (sh.partial) {
+              oss << "pred_weight_table present; later header fields not "
+                     "decoded\n";
+            }
+          } else {
+            oss << "Failed to parse slice header\n";
+          }
+        } else {
+          oss << "SPS/PPS not available; slice header not decoded\n";
+        }
+
+        const size_t payload_bytes =
+            nal.size > payload_offset ? nal.size - payload_offset : 0;
+        oss << "\nNAL payload: " << payload_bytes << " bytes";
+        if (header_bytes > 0) {
+          const size_t data_bytes =
+              payload_bytes > header_bytes ? payload_bytes - header_bytes : 0;
+          oss << "  (header ~" << header_bytes << " B, data " << data_bytes
+              << " B)";
+        }
+        oss << "\n";
+        if (pps) {
+          oss << "Entropy coding: "
+              << (pps->entropy_coding_mode_flag ? "CABAC" : "CAVLC") << "\n";
+        }
+
+        const size_t dump_offset = payload_offset + header_bytes;
+        if (dump_offset < nal.size) {
+          const size_t dump_len = std::min<size_t>(32, nal.size - dump_offset);
+          oss << "Slice data (first " << dump_len << " bytes):\n  ";
+          for (size_t i = 0; i < dump_len; i++) {
+            char byte[8];
+            std::snprintf(byte, sizeof(byte), "%02X ", data[dump_offset + i]);
+            oss << byte;
+            if ((i + 1) % 16 == 0 && i + 1 < dump_len) {
+              oss << "\n  ";
+            }
+          }
+          oss << "\n";
+        }
         break;
+      }
       case 6: {
         oss << "=== H.264 SEI (Supplemental Enhancement Information) ===\n";
         std::vector<SeiMessage> msgs;
@@ -608,10 +750,81 @@ NALAnalysis NALAnalyzer::AnalyzeOne(const NALUnit& nal,
         }
         break;
       }
-      default:
-        oss << "=== H.265 NAL Type " << (int)nal.nal_type << " ("
-            << nal.TypeName() << ") ===\n";
+      default: {
+        if (nal.nal_type <= 31) {
+          oss << "=== H.265 Slice ===\n";
+          const bool irap = nal.nal_type >= 16 && nal.nal_type <= 23;
+
+          uint32_t pps_id = 0;
+          if (nal.size > nal.start_code_len + 2) {
+            RbspBitReader quick(data + nal.start_code_len + 2,
+                                nal.size - nal.start_code_len - 2);
+            (void)quick.ReadBit();  // first_slice_segment_in_pic_flag
+            if (irap) {
+              (void)quick.ReadBit();  // no_output_of_prior_pics_flag
+            }
+            pps_id = (uint32_t)quick.ReadUe();
+          }
+
+          const H265PPS* pps = nullptr;
+          const H265SPS* sps = nullptr;
+          auto pps_it = h265_pps_map_.find((int)pps_id);
+          if (pps_it != h265_pps_map_.end()) {
+            pps = &pps_it->second;
+            auto sps_it = h265_sps_map_.find((int)pps->sps_id);
+            if (sps_it != h265_sps_map_.end()) {
+              sps = &sps_it->second;
+            }
+          }
+
+          if (sps && pps) {
+            H265SliceSegmentHeader sh;
+            if (ParseH265SliceSegmentHeader(nal, data, *sps, *pps, sh)) {
+              static const char* const kSliceNames[3] = {"B", "P", "I"};
+              oss << "first_slice_segment_in_pic_flag: "
+                  << sh.first_slice_segment_in_pic_flag << "\n";
+              oss << "slice_type: " << sh.slice_type << " ("
+                  << kSliceNames[sh.slice_type % 3] << ")\n";
+              oss << "slice_pic_parameter_set_id: "
+                  << sh.slice_pic_parameter_set_id << "\n";
+              if (sh.poc_valid) {
+                oss << "slice_pic_order_cnt_lsb: " << sh.pic_order_cnt_lsb
+                    << "\n";
+              }
+              oss << "IRAP: " << sh.is_irap << "  IDR: " << sh.is_idr
+                  << "  dependent: " << sh.dependent << "\n";
+            } else {
+              oss << "Failed to parse slice segment header\n";
+            }
+          } else {
+            oss << "SPS/PPS not available; slice header not decoded\n";
+          }
+
+          const size_t payload_offset = nal.start_code_len + 1;
+          const size_t payload_bytes =
+              nal.size > payload_offset ? nal.size - payload_offset : 0;
+          oss << "\nNAL payload: " << payload_bytes << " bytes\n";
+          if (payload_offset < nal.size) {
+            const size_t dump_len =
+                std::min<size_t>(32, nal.size - payload_offset);
+            oss << "Slice data (first " << dump_len << " bytes):\n  ";
+            for (size_t i = 0; i < dump_len; i++) {
+              char byte[8];
+              std::snprintf(byte, sizeof(byte), "%02X ",
+                            data[payload_offset + i]);
+              oss << byte;
+              if ((i + 1) % 16 == 0 && i + 1 < dump_len) {
+                oss << "\n  ";
+              }
+            }
+            oss << "\n";
+          }
+        } else {
+          oss << "=== H.265 NAL Type " << (int)nal.nal_type << " ("
+              << nal.TypeName() << ") ===\n";
+        }
         break;
+      }
     }
   }
 
