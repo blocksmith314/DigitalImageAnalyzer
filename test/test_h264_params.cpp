@@ -180,3 +180,27 @@ TEST(H264ParamsTest, BuildsSpsDetailsText) {
   EXPECT_NE(analysis.details.find("SPS Details"), std::string::npos);
   EXPECT_NE(analysis.details.find("Profile: High"), std::string::npos);
 }
+
+TEST(H264ParamsTest, BuildsSliceDetailsText) {
+  if (!sample_exists()) {
+    GTEST_SKIP() << "sample stream missing";
+  }
+
+  BitstreamParser parser(CodecType::kH264);
+  ASSERT_TRUE(parser.ParseFile(sample_path())) << parser.LastError();
+
+  NALAnalyzer analyzer = analyzerFor(parser);
+  const NALUnit* slice = firstOfType(parser.NalUnits(), 1);
+  if (slice == nullptr) {
+    slice = firstOfType(parser.NalUnits(), 5);
+  }
+  ASSERT_NE(slice, nullptr);
+
+  const NALAnalysis analysis =
+      analyzer.AnalyzeOne(*slice, parser.NalData(*slice));
+  EXPECT_NE(analysis.details.find("first_mb_in_slice:"), std::string::npos)
+      << analysis.details;
+  EXPECT_NE(analysis.details.find("slice_type:"), std::string::npos);
+  EXPECT_NE(analysis.details.find("NAL payload:"), std::string::npos);
+  EXPECT_NE(analysis.details.find("Entropy coding:"), std::string::npos);
+}
