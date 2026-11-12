@@ -5,6 +5,7 @@
 
 #include "bitstreamparser.h"
 #include "h265types.h"
+#include "nalanalyzer.h"
 
 namespace {
 
@@ -76,4 +77,33 @@ TEST(H265ParamsTest, NamesIrapSlices) {
   ASSERT_NE(cra, nullptr);
   EXPECT_EQ(idr->TypeName(), "IDR_N_LP");
   EXPECT_EQ(cra->TypeName(), "CRA_NUT");
+}
+
+TEST(H265ParamsTest, BuildsSliceDetailsText) {
+  if (!sample_exists()) {
+    GTEST_SKIP() << "sample stream missing";
+  }
+
+  BitstreamParser parser(CodecType::kH265);
+  ASSERT_TRUE(parser.ParseFile(sample_path())) << parser.LastError();
+
+  NALAnalyzer analyzer;
+  ASSERT_TRUE(analyzer.AnalyzeAll(parser));
+
+  const NALUnit* slice = nullptr;
+  for (const auto& nal : parser.NalUnits()) {
+    if (nal.nal_type <= 31) {
+      slice = &nal;
+      break;
+    }
+  }
+  ASSERT_NE(slice, nullptr);
+
+  const NALAnalysis analysis =
+      analyzer.AnalyzeOne(*slice, parser.NalData(*slice));
+  EXPECT_NE(analysis.details.find("slice_type:"), std::string::npos)
+      << analysis.details;
+  EXPECT_NE(analysis.details.find("slice_qp_delta:"), std::string::npos);
+  EXPECT_NE(analysis.details.find("NAL payload:"), std::string::npos)
+      << analysis.details;
 }

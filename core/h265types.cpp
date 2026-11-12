@@ -239,7 +239,8 @@ struct ShortTermRps {
   }
 };
 
-void parseShortTermRefPicSet(BitReader& br, uint32_t idx,
+template <typename Reader>
+void parseShortTermRefPicSet(Reader& br, uint32_t idx,
                              const std::vector<ShortTermRps>& rps_list,
                              std::vector<ShortTermRps>& out) {
   ShortTermRps rps;
@@ -499,23 +500,213 @@ bool ParseH265SliceSegmentHeader(const NALUnit& nal, const uint8_t* data,
     br.ReadBits(addr_bits);  // slice_segment_address
   }
 
-  if (!out.dependent) {
-    for (int i = 0; i < (int)pps.num_extra_slice_header_bits; i++) {
-      br.ReadBit();
-    }
-    out.slice_type = (uint32_t)br.ReadUe();
-    if (pps.output_flag_present_flag) {
-      br.ReadBit();
-    }
-    if (sps.separate_colour_plane_flag) {
-      br.ReadBits(2);
-    }
-    if (!out.is_idr) {
-      const uint32_t poc_bits = sps.log2_max_pic_order_cnt_lsb_minus4 + 4;
-      out.pic_order_cnt_lsb = (uint32_t)br.ReadBits(poc_bits);
-    }
-    out.poc_valid = true;  // IDR pictures have POC 0
+  if (out.dependent) {
+    out.header_bits = (uint32_t)br.BitsRead();
+    return true;
   }
+
+  for (int i = 0; i < (int)pps.num_extra_slice_header_bits; i++) {
+    br.ReadBit();
+  }
+  out.slice_type = (uint32_t)br.ReadUe();  // 0=B, 1=P, 2=I
+  if (pps.output_flag_present_flag) {
+    out.pic_output_flag = br.ReadBit();
+  }
+  if (sps.separate_colour_plane_flag) {
+    out.colour_plane_id = (uint8_t)br.ReadBits(2);
+  }
+
+  const bool is_b = out.slice_type == 0;
+  const bool is_i = out.slice_type == 2;
+
+  if (!out.is_idr) {
+    const uint32_t poc_bits = sps.log2_max_pic_order_cnt_lsb_minus4 + 4;
+    out.pic_order_cnt_lsb = (uint32_t)br.ReadBits(poc_bits);
+    out.poc_valid = true;
+
+    out.short_term_ref_pic_set_sps_flag = br.ReadBit();
+    if (out.short_term_ref_pic_set_sps_flag) {
+      uint32_t idx_bits = 0;
+      while ((1u << idx_bits) < std::max(1u, sps.num_short_term_ref_pic_sets)) {
+        idx_bits++;
+      }
+      out.short_term_ref_pic_set_idx =
+          idx_bits ? (uint32_t)br.ReadBits(idx_bits) : 0;
+    } else {
+      std::vector<ShortTermRps> empty;
+      std::vector<ShortTermRps> inline_rps;
+      parseShortTermRefPicSet(br, 0, empty, inline_rps);
+    }
+  } else {
+    out.poc_valid = true;
+  }
+
+  if (sps.long_term_ref_pics_present_flag) {
+    if (sps.num_long_term_ref_pics_sps > 0) {
+      out.num_long_term_sps = (uint32_t)br.ReadUe();
+    }
+    out.num_long_term_pics = (uint32_t)br.ReadUe();
+    const uint32_t total = out.num_long_term_sps + out.num_long_term_pics;
+    const uint32_t poc_bits = sps.log2_max_pic_order_cnt_lsb_minus4 + 4;
+    uint32_t lt_idx_bits = 0;
+    while ((1u << lt_idx_bits) < std::max(1u, sps.num_long_term_ref_pics_sps)) {
+      lt_idx_bits++;
+    }
+    for (uint32_t i = 0; i < total; i++) {
+      if (i < out.num_long_term_sps) {
+        if (lt_idx_bits) {
+          br.ReadBits(lt_idx_bits);  // lt_idx_sps
+        }
+      } else {
+        br.ReadBits(poc_bits);  // poc_lsb_lt
+      }
+      (void)br.ReadBit();  // used_by_curr_pic_lt_flag
+      bool msb_present = false;
+      if (total > 1) {
+        msb_present = br.ReadBit();
+      }
+      if (msb_present) {
+        br.ReadUe();  // delta_poc_msb_cycle_lt
+      }
+    }
+  }
+
+  if (sps.sps_temporal_mvp_enabled_flag) {
+    out.slice_temporal_mvp_enabled_flag = br.ReadBit();
+  }
+
+  if (sps.sample_adaptive_offset_enabled_flag) {
+    out.slice_sao_luma_flag = br.ReadBit();
+    out.slice_sao_chroma_flag = br.ReadBit();
+  }
+
+  out.num_ref_idx_active_override_flag = br.ReadBit();
+  if (out.num_ref_idx_active_override_flag) {
+    out.num_ref_idx_l0_active_minus1 = (uint32_t)br.ReadUe();
+    if (is_b) {
+      out.num_ref_idx_l1_active_minus1 = (uint32_t)br.ReadUe();
+    }
+  } else {
+    out.num_ref_idx_l0_active_minus1 = pps.num_ref_idx_l0_default_active_minus1;
+    out.num_ref_idx_l1_active_minus1 = pps.num_ref_idx_l1_default_active_minus1;
+  }
+
+  if (is_b) {
+    out.mvd_l1_zero_flag = br.ReadBit();
+  }
+  if (pps.cabac_init_present_flag && !is_i) {
+    out.cabac_init_flag = br.ReadBit();
+  }
+
+  if (out.slice_temporal_mvp_enabled_flag && !is_i) {
+    out.collocated_from_l0_flag = br.ReadBit();
+    if ((out.collocated_from_l0_flag && out.num_ref_idx_l0_active_minus1 > 0) ||
+        (!out.collocated_from_l0_flag &&
+         out.num_ref_idx_l1_active_minus1 > 0)) {
+      out.collocated_ref_idx = (uint32_t)br.ReadUe();
+    }
+  }
+
+  const bool weighted = (pps.weighted_pred_flag && out.slice_type == 1) ||
+                        (pps.weighted_bipred_flag && is_b);
+  if (weighted) {
+    const bool chroma = sps.chroma_format_idc != 0;
+    const uint32_t n0 = out.num_ref_idx_l0_active_minus1 + 1;
+    const uint32_t n1 = is_b ? out.num_ref_idx_l1_active_minus1 + 1 : 0;
+    br.ReadUe();  // luma_log2_weight_denom
+    if (chroma) {
+      br.ReadSe();  // delta_chroma_log2_weight_denom
+    }
+    auto read_flags = [&](uint32_t n, std::vector<bool>& luma,
+                          std::vector<bool>& chroma_flags) {
+      for (uint32_t i = 0; i < n; i++) {
+        luma[i] = br.ReadBit();
+      }
+      if (chroma) {
+        for (uint32_t i = 0; i < n; i++) {
+          chroma_flags[i] = br.ReadBit();
+        }
+      }
+    };
+    auto read_weights = [&](uint32_t n, const std::vector<bool>& luma,
+                            const std::vector<bool>& chroma_flags) {
+      for (uint32_t i = 0; i < n; i++) {
+        if (luma[i]) {
+          br.ReadSe();  // delta_luma_weight
+          br.ReadSe();  // luma_offset
+        }
+        if (chroma && chroma_flags[i]) {
+          br.ReadSe();
+          br.ReadSe();
+          br.ReadSe();
+          br.ReadSe();
+        }
+      }
+    };
+    std::vector<bool> luma0(n0, false);
+    std::vector<bool> chroma0(n0, false);
+    read_flags(n0, luma0, chroma0);
+    std::vector<bool> luma1(n1, false);
+    std::vector<bool> chroma1(n1, false);
+    if (is_b) {
+      read_flags(n1, luma1, chroma1);
+    }
+    read_weights(n0, luma0, chroma0);
+    if (is_b) {
+      read_weights(n1, luma1, chroma1);
+    }
+  }
+
+  if (!is_i) {
+    out.five_minus_max_num_merge_cand = (uint32_t)br.ReadUe();
+  }
+  out.slice_qp_delta = (int32_t)br.ReadSe();
+  if (pps.pps_slice_chroma_qp_offsets_present_flag) {
+    out.slice_cb_qp_offset = (int32_t)br.ReadSe();
+    out.slice_cr_qp_offset = (int32_t)br.ReadSe();
+  }
+
+  if (pps.deblocking_filter_control_present_flag) {
+    bool disabled = pps.pps_deblocking_filter_disabled_flag;
+    out.slice_beta_offset_div2 = pps.pps_beta_offset_div2;
+    out.slice_tc_offset_div2 = pps.pps_tc_offset_div2;
+    if (pps.deblocking_filter_override_enabled_flag) {
+      const bool override_enabled = br.ReadBit();
+      if (override_enabled) {
+        disabled = br.ReadBit();
+        if (!disabled) {
+          out.slice_beta_offset_div2 = (int32_t)br.ReadSe();
+          out.slice_tc_offset_div2 = (int32_t)br.ReadSe();
+        }
+      }
+    }
+    out.slice_deblocking_filter_disabled_flag = disabled;
+  }
+
+  if (pps.pps_loop_filter_across_slices_enabled_flag &&
+      (out.slice_sao_luma_flag || out.slice_sao_chroma_flag ||
+       !out.slice_deblocking_filter_disabled_flag)) {
+    out.slice_loop_filter_across_slices_enabled_flag = br.ReadBit();
+  }
+
+  if (pps.tiles_enabled_flag || pps.entropy_coding_sync_enabled_flag) {
+    out.num_entry_point_offsets = (uint32_t)br.ReadUe();
+    if (out.num_entry_point_offsets > 0) {
+      const uint32_t offset_len = (uint32_t)br.ReadUe() + 1;
+      for (uint32_t i = 0; i < out.num_entry_point_offsets; i++) {
+        br.ReadBits((int)offset_len);
+      }
+    }
+  }
+
+  if (pps.slice_segment_header_extension_present_flag) {
+    const uint32_t ext_len = (uint32_t)br.ReadUe();
+    for (uint32_t i = 0; i < ext_len; i++) {
+      br.ReadBits(8);
+    }
+  }
+
+  out.header_bits = (uint32_t)br.BitsRead();
   return true;
 }
 
