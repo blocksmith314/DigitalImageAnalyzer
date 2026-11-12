@@ -725,11 +725,6 @@ NALAnalysis NALAnalyzer::AnalyzeOne(const NALUnit& nal,
         }
         break;
       }
-      case 19:
-      case 20:
-      case 21:
-        oss << "=== H.265 Keyframe ===\nType: " << nal.TypeName() << "\n";
-        break;
       case 35:
         oss << "=== H.265 AUD (Access Unit Delimiter) ===\n";
         break;
@@ -777,22 +772,96 @@ NALAnalysis NALAnalyzer::AnalyzeOne(const NALUnit& nal,
             }
           }
 
+          size_t header_bytes = 0;
           if (sps && pps) {
             H265SliceSegmentHeader sh;
             if (ParseH265SliceSegmentHeader(nal, data, *sps, *pps, sh)) {
+              header_bytes = (sh.header_bits + 7) / 8;
               static const char* const kSliceNames[3] = {"B", "P", "I"};
               oss << "first_slice_segment_in_pic_flag: "
                   << sh.first_slice_segment_in_pic_flag << "\n";
-              oss << "slice_type: " << sh.slice_type << " ("
-                  << kSliceNames[sh.slice_type % 3] << ")\n";
-              oss << "slice_pic_parameter_set_id: "
-                  << sh.slice_pic_parameter_set_id << "\n";
-              if (sh.poc_valid) {
-                oss << "slice_pic_order_cnt_lsb: " << sh.pic_order_cnt_lsb
-                    << "\n";
+              oss << "dependent_slice_segment: " << sh.dependent << "\n";
+              if (!sh.dependent) {
+                oss << "slice_type: " << sh.slice_type << " ("
+                    << kSliceNames[sh.slice_type % 3] << ")\n";
+                oss << "pic_output_flag: " << sh.pic_output_flag << "\n";
+                if (sps->separate_colour_plane_flag) {
+                  oss << "colour_plane_id: " << (int)sh.colour_plane_id << "\n";
+                }
+                oss << "slice_pic_parameter_set_id: "
+                    << sh.slice_pic_parameter_set_id << "\n";
+                if (sh.poc_valid) {
+                  oss << "slice_pic_order_cnt_lsb: " << sh.pic_order_cnt_lsb
+                      << "\n";
+                }
+                if (!sh.is_idr) {
+                  oss << "short_term_ref_pic_set_sps_flag: "
+                      << sh.short_term_ref_pic_set_sps_flag;
+                  if (sh.short_term_ref_pic_set_sps_flag) {
+                    oss << "  idx: " << sh.short_term_ref_pic_set_idx;
+                  }
+                  oss << "\n";
+                }
+                if (sps->long_term_ref_pics_present_flag) {
+                  oss << "num_long_term_sps: " << sh.num_long_term_sps
+                      << "  num_long_term_pics: " << sh.num_long_term_pics
+                      << "\n";
+                }
+                if (sps->sps_temporal_mvp_enabled_flag) {
+                  oss << "slice_temporal_mvp_enabled_flag: "
+                      << sh.slice_temporal_mvp_enabled_flag;
+                  if (sh.slice_temporal_mvp_enabled_flag &&
+                      sh.slice_type != 2) {
+                    oss << "  collocated_from_l0: "
+                        << sh.collocated_from_l0_flag
+                        << "  collocated_ref_idx: " << sh.collocated_ref_idx;
+                  }
+                  oss << "\n";
+                }
+                if (sps->sample_adaptive_offset_enabled_flag) {
+                  oss << "slice_sao_luma_flag: " << sh.slice_sao_luma_flag
+                      << "  slice_sao_chroma_flag: " << sh.slice_sao_chroma_flag
+                      << "\n";
+                }
+                oss << "num_ref_idx_l0_active_minus1: "
+                    << sh.num_ref_idx_l0_active_minus1
+                    << "  l1: " << sh.num_ref_idx_l1_active_minus1 << "\n";
+                if (sh.slice_type == 0) {
+                  oss << "mvd_l1_zero_flag: " << sh.mvd_l1_zero_flag << "\n";
+                }
+                if (pps->cabac_init_present_flag && sh.slice_type != 2) {
+                  oss << "cabac_init_flag: " << sh.cabac_init_flag << "\n";
+                }
+                if (sh.slice_type != 2) {
+                  oss << "five_minus_max_num_merge_cand: "
+                      << sh.five_minus_max_num_merge_cand << "\n";
+                }
+                oss << "slice_qp_delta: " << sh.slice_qp_delta << "\n";
+                if (pps->pps_slice_chroma_qp_offsets_present_flag) {
+                  oss << "slice_cb_qp_offset: " << sh.slice_cb_qp_offset
+                      << "  slice_cr_qp_offset: " << sh.slice_cr_qp_offset
+                      << "\n";
+                }
+                if (pps->deblocking_filter_control_present_flag) {
+                  oss << "slice_deblocking_filter_disabled_flag: "
+                      << sh.slice_deblocking_filter_disabled_flag
+                      << "  beta: " << sh.slice_beta_offset_div2
+                      << "  tc: " << sh.slice_tc_offset_div2 << "\n";
+                }
+                if (pps->pps_loop_filter_across_slices_enabled_flag &&
+                    (sh.slice_sao_luma_flag || sh.slice_sao_chroma_flag ||
+                     !sh.slice_deblocking_filter_disabled_flag)) {
+                  oss << "slice_loop_filter_across_slices_enabled_flag: "
+                      << sh.slice_loop_filter_across_slices_enabled_flag
+                      << "\n";
+                }
+                if (pps->tiles_enabled_flag ||
+                    pps->entropy_coding_sync_enabled_flag) {
+                  oss << "num_entry_point_offsets: "
+                      << sh.num_entry_point_offsets << "\n";
+                }
               }
-              oss << "IRAP: " << sh.is_irap << "  IDR: " << sh.is_idr
-                  << "  dependent: " << sh.dependent << "\n";
+              oss << "IRAP: " << sh.is_irap << "  IDR: " << sh.is_idr << "\n";
             } else {
               oss << "Failed to parse slice segment header\n";
             }
@@ -803,15 +872,22 @@ NALAnalysis NALAnalyzer::AnalyzeOne(const NALUnit& nal,
           const size_t payload_offset = nal.start_code_len + 1;
           const size_t payload_bytes =
               nal.size > payload_offset ? nal.size - payload_offset : 0;
-          oss << "\nNAL payload: " << payload_bytes << " bytes\n";
-          if (payload_offset < nal.size) {
+          oss << "\nNAL payload: " << payload_bytes << " bytes";
+          if (header_bytes > 0) {
+            const size_t data_bytes =
+                payload_bytes > header_bytes ? payload_bytes - header_bytes : 0;
+            oss << "  (header ~" << header_bytes << " B, data " << data_bytes
+                << " B)";
+          }
+          oss << "\n";
+          const size_t dump_offset = payload_offset + header_bytes;
+          if (dump_offset < nal.size) {
             const size_t dump_len =
-                std::min<size_t>(32, nal.size - payload_offset);
+                std::min<size_t>(32, nal.size - dump_offset);
             oss << "Slice data (first " << dump_len << " bytes):\n  ";
             for (size_t i = 0; i < dump_len; i++) {
               char byte[8];
-              std::snprintf(byte, sizeof(byte), "%02X ",
-                            data[payload_offset + i]);
+              std::snprintf(byte, sizeof(byte), "%02X ", data[dump_offset + i]);
               oss << byte;
               if ((i + 1) % 16 == 0 && i + 1 < dump_len) {
                 oss << "\n  ";

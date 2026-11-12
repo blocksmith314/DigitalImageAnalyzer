@@ -127,12 +127,41 @@ struct H265SliceSegmentHeader {
   uint32_t slice_type = 1;  // 0 = B, 1 = P, 2 = I
   uint32_t pic_order_cnt_lsb = 0;
   bool poc_valid = false;
+  bool pic_output_flag = true;
+  uint8_t colour_plane_id = 0;
+  bool short_term_ref_pic_set_sps_flag = false;
+  uint32_t short_term_ref_pic_set_idx = 0;
+  uint32_t num_long_term_sps = 0;
+  uint32_t num_long_term_pics = 0;
+  bool slice_temporal_mvp_enabled_flag = false;
+  bool collocated_from_l0_flag = true;
+  uint32_t collocated_ref_idx = 0;
+  bool slice_sao_luma_flag = false;
+  bool slice_sao_chroma_flag = false;
+  bool num_ref_idx_active_override_flag = false;
+  uint32_t num_ref_idx_l0_active_minus1 = 0;
+  uint32_t num_ref_idx_l1_active_minus1 = 0;
+  bool mvd_l1_zero_flag = false;
+  bool cabac_init_flag = false;
+  uint32_t five_minus_max_num_merge_cand = 0;
+  int32_t slice_qp_delta = 0;
+  int32_t slice_cb_qp_offset = 0;
+  int32_t slice_cr_qp_offset = 0;
+  bool slice_deblocking_filter_disabled_flag = false;
+  int32_t slice_beta_offset_div2 = 0;
+  int32_t slice_tc_offset_div2 = 0;
+  bool slice_loop_filter_across_slices_enabled_flag = false;
+  uint32_t num_entry_point_offsets = 0;
+  uint32_t header_bits = 0;
+  bool partial = false;
 
   char FrameTypeChar() const {
-    if (is_irap || slice_type == 2) { return 'I';
-}
-    if (slice_type == 0) { return 'B';
-}
+    if (is_irap || slice_type == 2) {
+      return 'I';
+    }
+    if (slice_type == 0) {
+      return 'B';
+    }
     return 'P';
   }
 };
@@ -141,7 +170,7 @@ bool ParseH265Vps(const NALUnit& nal, const uint8_t* data, H265VPS& out);
 bool ParseH265Sps(const NALUnit& nal, const uint8_t* data, H265SPS& out);
 bool ParseH265Pps(const NALUnit& nal, const uint8_t* data, H265PPS& out);
 bool ParseH265SliceSegmentHeader(const NALUnit& nal, const uint8_t* data,
-                                     const H265SPS& sps, const H265PPS& pps,
-                                     H265SliceSegmentHeader& out);
+                                 const H265SPS& sps, const H265PPS& pps,
+                                 H265SliceSegmentHeader& out);
 
 #endif  // DIA_CORE_H265TYPES_H_

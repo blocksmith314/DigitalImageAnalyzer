@@ -71,6 +71,11 @@ uint64_t RbspBitReader::ReadBits(int n) {
   return v;
 }
 
+int64_t RbspBitReader::ReadSe() {
+  const uint64_t ue = ReadUe();
+  return (ue & 1) ? (int64_t)((ue + 1) / 2) : -(int64_t)(ue / 2);
+}
+
 uint64_t RbspBitReader::ReadUe() {
   int zeros = 0;
   while (!eof() && !ReadBit() && zeros < 32) {
