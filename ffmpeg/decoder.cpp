@@ -24,6 +24,8 @@ struct FFmpegDecoder::Impl {
   DecodedFrame pending;
   int pending_index = 0;
   AVFrame* last_frame = nullptr;  // reference to the last decoded frame
+  std::vector<double> frame_pts;  // per-frame PTS in seconds (containers)
+  bool frame_pts_tried = false;
 };
 
 FFmpegDecoder::FFmpegDecoder() : impl_(new Impl()) {}
@@ -131,6 +133,8 @@ bool FFmpegDecoder::OpenFile(const std::string& path, CodecType codec) {
                             : "";
   impl_->is_raw =
       (std::strcmp(fmtName, "h264") == 0 || std::strcmp(fmtName, "hevc") == 0);
+  impl_->frame_pts.clear();
+  impl_->frame_pts_tried = false;
 
   path_ = path;
   codec_ = codec;
@@ -346,6 +350,35 @@ bool FFmpegDecoder::SeekToFrame(int target_index) {
   return true;
 }
 
+bool FFmpegDecoder::BuildFramePts() {
+  if (!impl_ || impl_->is_raw || impl_->video_stream_idx < 0) {
+    return false;
+  }
+  impl_->frame_pts_tried = true;
+  AVStream* st = impl_->fmtCtx->streams[impl_->video_stream_idx];
+  if (!st) {
+    return false;
+  }
+
+  std::vector<double> pts;
+  AVPacket* pkt = av_packet_alloc();
+  while (av_read_frame(impl_->fmtCtx, pkt) >= 0) {
+    if (pkt->stream_index == impl_->video_stream_idx &&
+        pkt->pts != AV_NOPTS_VALUE) {
+      pts.push_back(pkt->pts * av_q2d(st->time_base));
+    }
+    av_packet_unref(pkt);
+  }
+  av_packet_free(&pkt);
+
+  // The demuxer is now at EOF; rewind for the following seek.
+  av_seek_frame(impl_->fmtCtx, impl_->video_stream_idx, 0,
+                AVSEEK_FLAG_BACKWARD);
+  avcodec_flush_buffers(impl_->codecCtx);
+  impl_->frame_pts = std::move(pts);
+  return !impl_->frame_pts.empty();
+}
+
 bool FFmpegDecoder::SeekByContainer(int target_index) {
   if (!impl_ || !impl_->fmtCtx || impl_->video_stream_idx < 0 ||
       frame_rate_ <= 0.0) {
@@ -356,9 +389,18 @@ bool FFmpegDecoder::SeekByContainer(int target_index) {
     return false;
   }
 
-  const int64_t target_pts =
-      (int64_t)std::llround((double)target_index * st->time_base.den /
-                            (frame_rate_ * st->time_base.num));
+  int64_t target_pts = 0;
+  if (impl_->frame_pts.empty() && !impl_->frame_pts_tried) {
+    BuildFramePts();
+  }
+  if ((size_t)target_index < impl_->frame_pts.size()) {
+    target_pts = (int64_t)std::llround(impl_->frame_pts[(size_t)target_index] /
+                                       av_q2d(st->time_base));
+  } else {
+    target_pts =
+        (int64_t)std::llround((double)target_index * st->time_base.den /
+                              (frame_rate_ * st->time_base.num));
+  }
 
   const int seek_ret = av_seek_frame(impl_->fmtCtx, impl_->video_stream_idx,
                                      target_pts, AVSEEK_FLAG_BACKWARD);

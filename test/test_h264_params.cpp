@@ -204,3 +204,24 @@ TEST(H264ParamsTest, BuildsSliceDetailsText) {
   EXPECT_NE(analysis.details.find("NAL payload:"), std::string::npos);
   EXPECT_NE(analysis.details.find("Entropy coding:"), std::string::npos);
 }
+
+TEST(H264ParamsTest, ParsesVuiFrameRate) {
+  if (!sample_exists()) {
+    GTEST_SKIP() << "sample stream missing";
+  }
+
+  BitstreamParser parser(CodecType::kH264);
+  ASSERT_TRUE(parser.ParseFile(sample_path())) << parser.LastError();
+
+  const NALUnit* nal = firstOfType(parser.NalUnits(), 7);
+  ASSERT_NE(nal, nullptr);
+  H264SPS sps;
+  ASSERT_TRUE(ParseH264Sps(*nal, parser.NalData(*nal), sps));
+
+  if (!sps.timing_info_present_flag || sps.num_units_in_tick == 0) {
+    GTEST_SKIP() << "sample has no VUI timing";
+  }
+  const double fps = (double)sps.time_scale / (2.0 * sps.num_units_in_tick);
+  EXPECT_GT(fps, 0.0);
+  EXPECT_LT(fps, 240.0);
+}

@@ -538,6 +538,22 @@ void MainWindow::BuildNalList() {
                             metrics.horizontalAdvance("RSV_IRAP_VCL22") + 24);
 }
 
+double MainWindow::SpsFrameRate() const {
+  for (const auto& entry : analyzer_.H264SpsMap()) {
+    const H264SPS& sps = entry.second;
+    if (sps.num_units_in_tick > 0 && sps.time_scale > 0) {
+      return (double)sps.time_scale / (2.0 * sps.num_units_in_tick);
+    }
+  }
+  for (const auto& entry : analyzer_.H265SpsMap()) {
+    const H265SPS& sps = entry.second;
+    if (sps.vui_num_units_in_tick > 0 && sps.vui_time_scale > 0) {
+      return (double)sps.vui_time_scale / sps.vui_num_units_in_tick;
+    }
+  }
+  return 0.0;
+}
+
 void MainWindow::UpdateStats() {
   const auto& s = analyzer_.stats();
   const QString codec_str =
@@ -644,6 +660,13 @@ void MainWindow::StartPlayer() {
   // No upfront decode: frames are decoded on demand while playing/seeking.
   total_frames_ = (int)stats.FrameCount;
   frame_rate_ = player_decoder_.FrameRate();
+  if (!player_decoder_.HasTimestamps()) {
+    // Raw Annex B has no container timing; prefer the SPS VUI frame rate.
+    const double vui_fps = SpsFrameRate();
+    if (vui_fps > 0.0) {
+      frame_rate_ = vui_fps;
+    }
+  }
   UpdateStats();  // refresh stats that depend on decoded frames / frame rate
 
   if (total_frames_ <= 0) {
