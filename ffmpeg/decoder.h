@@ -50,6 +50,7 @@ class FFmpegDecoder {
 
  private:
   bool ConvertFrame(const AVFrame* frame, DecodedFrame& out);
+  bool BuildFramePts();
 
   struct Impl;
   Impl* impl_ = nullptr;

@@ -64,6 +64,7 @@ class MainWindow : public QMainWindow {
   void SetupUi();
   void BuildNalList();
   void UpdateStats();
+  double SpsFrameRate() const;
   void DecodeThumbnails();
   void LoadRecentFiles();
   void SaveRecentFiles();
