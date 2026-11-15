@@ -87,6 +87,7 @@ the player jumps to the frame that contains it.
 - Detailed view for SPS/PPS/VPS fields, SEI payloads and slice information
 - Frame-type colour coding and linked highlighting between table and player
 - Player position shown as frame number or time (switchable, persisted)
+- Optional performance log (View -> Performance log) with per-interaction timings
 
 ### Playback
 

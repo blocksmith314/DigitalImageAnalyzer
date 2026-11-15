@@ -2,12 +2,14 @@
 
 #include <QApplication>
 #include <QComboBox>
+#include <QDockWidget>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMimeData>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSettings>
 #include <QSignalSpy>
@@ -212,6 +214,52 @@ TEST(MainWindowTest, HelpMenuHasEntries) {
   EXPECT_TRUE(entries.contains("Keyboard Shortcuts"));
   EXPECT_TRUE(entries.contains("Documentation"));
   EXPECT_TRUE(entries.contains("Report an Issue"));
+}
+
+TEST(MainWindowTest, PerformanceLogTogglesAndRecords) {
+  if (!exists(data_path("output.h264"))) {
+    GTEST_SKIP() << "H.264 fixture missing";
+  }
+
+  QSettings().setValue("perfLogVisible", false);
+  MainWindow window;
+  window.show();
+  QApplication::processEvents();
+
+  auto* dock = window.findChild<QDockWidget*>("perfLogDock");
+  ASSERT_NE(dock, nullptr);
+  EXPECT_FALSE(dock->isVisible());
+
+  QAction* action = nullptr;
+  for (QAction* menu_action : window.menuBar()->actions()) {
+    if (menu_action->menu() == nullptr) {
+      continue;
+    }
+    for (QAction* entry : menu_action->menu()->actions()) {
+      if (entry->text().contains("Performance log")) {
+        action = entry;
+      }
+    }
+  }
+  ASSERT_NE(action, nullptr);
+  action->setChecked(true);
+  QApplication::processEvents();
+  EXPECT_TRUE(dock->isVisible());
+
+  ASSERT_TRUE(
+      window.LoadFile(QString::fromStdString(data_path("output.h264"))));
+  QApplication::processEvents();
+
+  auto* log = window.findChild<QPlainTextEdit*>("perfLog");
+  ASSERT_NE(log, nullptr);
+  EXPECT_TRUE(log->toPlainText().contains("open"))
+      << log->toPlainText().toStdString();
+  EXPECT_TRUE(log->toPlainText().contains("total="));
+
+  action->setChecked(false);
+  QApplication::processEvents();
+  EXPECT_FALSE(dock->isVisible());
+  QSettings().setValue("perfLogVisible", false);
 }
 
 TEST(MainWindowTest, ProgressModeSwitchesToTime) {
