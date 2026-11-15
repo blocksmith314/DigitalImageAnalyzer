@@ -41,12 +41,24 @@ pkg_check_modules(AVUTIL REQUIRED IMPORTED_TARGET libavutil)
 pkg_check_modules(SWSCALE REQUIRED IMPORTED_TARGET libswscale)
 pkg_check_modules(SWRESAMPLE REQUIRED IMPORTED_TARGET libswresample)
 
+set(DIA_APP_ICON_SOURCES)
+if(APPLE)
+    set(DIA_MACOS_ICON ${CMAKE_SOURCE_DIR}/resources/icons/DigitalImageAnalyzer.icns)
+    set_source_files_properties(${DIA_MACOS_ICON} PROPERTIES
+        MACOSX_PACKAGE_LOCATION "Resources")
+    list(APPEND DIA_APP_ICON_SOURCES ${DIA_MACOS_ICON})
+elseif(WIN32)
+    list(APPEND DIA_APP_ICON_SOURCES ${CMAKE_SOURCE_DIR}/resources/icons/app.rc)
+endif()
+
 qt_add_executable(DigitalImageAnalyzer
     main.cpp
     mainwindow.h
     mainwindow.cpp
     nallistmodel.h
     nallistmodel.cpp
+
+    ${DIA_APP_ICON_SOURCES}
 
     core/nalunit.h
     core/platformfile.h
@@ -89,6 +101,22 @@ target_link_libraries(DigitalImageAnalyzer PRIVATE
     PkgConfig::SWRESAMPLE
     Qt6::Multimedia
 )
+
+if(APPLE)
+    set_target_properties(DigitalImageAnalyzer PROPERTIES
+        MACOSX_BUNDLE_ICON_FILE "DigitalImageAnalyzer.icns")
+endif()
+
+include(GNUInstallDirs)
+install(TARGETS DigitalImageAnalyzer
+    BUNDLE DESTINATION .
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(UNIX AND NOT APPLE)
+    install(FILES packaging/linux/DigitalImageAnalyzer.desktop
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES packaging/linux/digitalimageanalyzer.png
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps)
+endif()
 
 # The analyzer walks millions of NAL units; unoptimized Debug code is 10-20x
 # slower, so keep -O2 even in Debug builds (still with debug info).
