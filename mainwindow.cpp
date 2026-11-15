@@ -1,8 +1,10 @@
 #include "mainwindow.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QCloseEvent>
 #include <QDesktopServices>
+#include <QDockWidget>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QElapsedTimer>
@@ -10,6 +12,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFont>
+#include <QFontDatabase>
 #include <QFontMetrics>
 #include <QGroupBox>
 #include <QGuiApplication>
@@ -21,6 +24,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QPlainTextEdit>
 #include <QProgressDialog>
 #include <QResizeEvent>
 #include <QSettings>
@@ -30,6 +34,7 @@
 #include <QStatusBar>
 #include <QStyle>
 #include <QSysInfo>
+#include <QTime>
 #include <QToolBar>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -316,6 +321,15 @@ void MainWindow::SetupUi() {
   connect(bottomSplit, &QSplitter::splitterMoved, this,
           [this](int, int) { SyncSplitterWidths(false); });
 
+  QMenu* viewMenu = menuBar()->addMenu("View");
+  perf_action_ = viewMenu->addAction("Performance log");
+  perf_action_->setCheckable(true);
+  perf_action_->setChecked(QSettings().value("perfLogVisible", false).toBool());
+  connect(perf_action_, &QAction::toggled, this,
+          &MainWindow::SetPerfLogVisible);
+
+  SetupPerfLog();
+
   QMenu* helpMenu = menuBar()->addMenu("Help");
   QAction* shortcutsAct = helpMenu->addAction("Keyboard Shortcuts");
   connect(shortcutsAct, &QAction::triggered, this, &MainWindow::ShowShortcuts);
@@ -358,6 +372,58 @@ void MainWindow::OpenFile() {
   if (LoadFile(path)) {
     AddRecentFile(path);
   }
+}
+
+void MainWindow::SetupPerfLog() {
+  perf_dock_ = new QDockWidget("Performance log", this);
+  perf_dock_->setObjectName("perfLogDock");
+  perf_dock_->setAllowedAreas(Qt::BottomDockWidgetArea);
+
+  auto* panel = new QWidget(perf_dock_);
+  auto* layout = new QVBoxLayout(panel);
+  layout->setContentsMargins(4, 4, 4, 4);
+  layout->setSpacing(4);
+
+  perf_log_ = new QPlainTextEdit(panel);
+  perf_log_->setObjectName("perfLog");
+  perf_log_->setReadOnly(true);
+  perf_log_->setMaximumBlockCount(2000);
+  perf_log_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+  layout->addWidget(perf_log_, 1);
+
+  auto* buttons = new QHBoxLayout();
+  auto* clear_button = new QPushButton("Clear", panel);
+  auto* copy_button = new QPushButton("Copy", panel);
+  connect(clear_button, &QPushButton::clicked, perf_log_,
+          &QPlainTextEdit::clear);
+  connect(copy_button, &QPushButton::clicked, this, [this]() {
+    QGuiApplication::clipboard()->setText(perf_log_->toPlainText());
+  });
+  buttons->addWidget(clear_button);
+  buttons->addWidget(copy_button);
+  buttons->addStretch(1);
+  layout->addLayout(buttons);
+
+  perf_dock_->setWidget(panel);
+  addDockWidget(Qt::BottomDockWidgetArea, perf_dock_);
+  perf_log_enabled_ = perf_action_ && perf_action_->isChecked();
+  perf_dock_->setVisible(perf_log_enabled_);
+}
+
+void MainWindow::SetPerfLogVisible(bool visible) {
+  perf_log_enabled_ = visible;
+  if (perf_dock_) {
+    perf_dock_->setVisible(visible);
+  }
+  QSettings().setValue("perfLogVisible", visible);
+}
+
+void MainWindow::AppendPerf(const QString& line) {
+  if (!perf_log_enabled_ || !perf_log_) {
+    return;
+  }
+  perf_log_->appendPlainText(QString("%1 %2").arg(
+      QTime::currentTime().toString("HH:mm:ss.zzz"), line));
 }
 
 void MainWindow::ShowShortcuts() {
@@ -505,6 +571,15 @@ bool MainWindow::LoadFile(const QString& path) {
   }
 
   const qint64 total_ms = probeMs + demuxMs + analyze_ms + timer.restart();
+  if (perf_log_enabled_) {
+    AppendPerf(
+        QString("open   %1  probe=%2ms demux=%3ms analyze=%4ms total=%5ms")
+            .arg(QFileInfo(path).fileName())
+            .arg(probeMs)
+            .arg(demuxMs)
+            .arg(analyze_ms)
+            .arg(total_ms));
+  }
   if (time_info_label_) {
     time_info_label_->setText(
         QString("Loaded in %1 s  (probe %2 s, read %3 s, analyze %4 s)  ")
@@ -765,12 +840,23 @@ void MainWindow::ShowFrameAt(int idx) {
     return;
   }
 
+  const bool perf = perf_log_enabled_;
+  QElapsedTimer perf_timer;
+  qint64 seek_ms = 0;
+  qint64 decode_ms = 0;
+  if (perf) {
+    perf_timer.start();
+  }
+
   // Decode sequentially when moving forward by one; otherwise seek.
   const bool jump =
       (idx < current_frame_index_ || idx > current_frame_index_ + 1);
   if (jump) {
     if (!player_decoder_.SeekToFrame(idx)) {
       return;
+    }
+    if (perf) {
+      seek_ms = perf_timer.restart();
     }
   }
 
@@ -782,9 +868,24 @@ void MainWindow::ShowFrameAt(int idx) {
     play_btn_->setText("Play");
     return;
   }
+  if (perf) {
+    decode_ms = perf_timer.restart();
+  }
   current_frame_index_ = idx;
   current_pts_ = frame.pts_sec;
   ShowFrame(frame.image, idx);
+  if (perf) {
+    const qint64 display_ms = perf_timer.elapsed();
+    AppendPerf(
+        QString("%1 %2  frame=%3 total=%4ms seek=%5 decode=%6 display=%7")
+            .arg(jump ? "seek  " : "step  ")
+            .arg(QFileInfo(QString::fromStdString(current_path_)).fileName())
+            .arg(idx)
+            .arg(seek_ms + decode_ms + display_ms)
+            .arg(seek_ms)
+            .arg(decode_ms)
+            .arg(display_ms));
+  }
 
   if (jump) {
     has_pending_ = false;
@@ -972,9 +1073,22 @@ void MainWindow::OnNalSelected(int idx) {
     return;
   }
 
+  const bool perf = perf_log_enabled_;
+  QElapsedTimer perf_timer;
+  if (perf) {
+    perf_timer.start();
+  }
   NALAnalysis analysis = analyzer_.AnalyzeOne(
       nals[(size_t)idx], parser_.NalData(nals[(size_t)idx]));
   details_->setPlainText(QString::fromStdString(analysis.details));
+  if (perf) {
+    AppendPerf(
+        QString("nal    %1  row=%2 analyze=%3ms render=%4ms")
+            .arg(QFileInfo(QString::fromStdString(current_path_)).fileName())
+            .arg(idx)
+            .arg(perf_timer.restart())
+            .arg(perf_timer.elapsed()));
+  }
 
   const int f_idx = nals[(size_t)idx].frame_index;
   if (f_idx >= 0 && f_idx < total_frames_) {

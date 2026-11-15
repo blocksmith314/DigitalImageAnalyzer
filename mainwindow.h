@@ -24,6 +24,8 @@
 
 class AudioPlayer;
 class NalListModel;
+class QDockWidget;
+class QPlainTextEdit;
 class QSplitter;
 
 class MainWindow : public QMainWindow {
@@ -55,6 +57,7 @@ class MainWindow : public QMainWindow {
   void ShowAbout();
   void ShowShortcuts();
   void UpdatePositionLabel();
+  void SetPerfLogVisible(bool visible);
 
  private:
   enum class ProgressMode { kFrames, kTime };
@@ -65,6 +68,8 @@ class MainWindow : public QMainWindow {
   void BuildNalList();
   void UpdateStats();
   double SpsFrameRate() const;
+  void SetupPerfLog();
+  void AppendPerf(const QString& line);
   void DecodeThumbnails();
   void LoadRecentFiles();
   void SaveRecentFiles();
@@ -115,6 +120,10 @@ class MainWindow : public QMainWindow {
   QComboBox* speed_combo_ = nullptr;
   QSpinBox* step_spin_ = nullptr;
   QComboBox* progress_mode_combo_ = nullptr;
+  QDockWidget* perf_dock_ = nullptr;
+  QPlainTextEdit* perf_log_ = nullptr;
+  QAction* perf_action_ = nullptr;
+  bool perf_log_enabled_ = false;
   ProgressMode progress_mode_ = ProgressMode::kFrames;
 
   bool is_playing_ = false;
