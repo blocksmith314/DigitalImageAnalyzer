@@ -2,6 +2,9 @@
 
 #include <QDebug>
 #include <QImage>
+#include <algorithm>
+#include <chrono>
+#include <climits>
 #include <cmath>
 #include <cstring>
 
@@ -24,8 +27,13 @@ struct FFmpegDecoder::Impl {
   DecodedFrame pending;
   int pending_index = 0;
   AVFrame* last_frame = nullptr;  // reference to the last decoded frame
-  std::vector<double> frame_pts;  // per-frame PTS in seconds (containers)
-  bool frame_pts_tried = false;
+  struct FrameEntry {
+    double pts = 0.0;
+    bool key = false;
+  };
+  std::vector<FrameEntry> frame_index;  // presentation order
+  std::vector<int> keyframes;           // indices into frame_index
+  bool frame_index_tried = false;
 };
 
 FFmpegDecoder::FFmpegDecoder() : impl_(new Impl()) {}
@@ -133,8 +141,9 @@ bool FFmpegDecoder::OpenFile(const std::string& path, CodecType codec) {
                             : "";
   impl_->is_raw =
       (std::strcmp(fmtName, "h264") == 0 || std::strcmp(fmtName, "hevc") == 0);
-  impl_->frame_pts.clear();
-  impl_->frame_pts_tried = false;
+  impl_->frame_index.clear();
+  impl_->keyframes.clear();
+  impl_->frame_index_tried = false;
 
   path_ = path;
   codec_ = codec;
@@ -316,6 +325,7 @@ void FFmpegDecoder::reset() {
 }
 
 bool FFmpegDecoder::SeekToFrame(int target_index) {
+  last_seek_stats_ = SeekStats();
   if (!impl_ || !impl_->codecCtx || !impl_->fmtCtx) {
     return false;
   }
@@ -328,12 +338,54 @@ bool FFmpegDecoder::SeekToFrame(int target_index) {
     return true;
   }
 
+  const int gap = target_index - current_frame_;
+  constexpr int kBlindForwardFrames = 30;
+  constexpr int kSeekOverheadFrames = 2;
+
   bool seek_attempted = false;
-  if (!impl_->is_raw &&
-      (target_index < current_frame_ || target_index > current_frame_ + 1)) {
-    seek_attempted = true;
-    if (SeekByContainer(target_index)) {
-      return true;
+  bool index_rebuilt = false;
+
+  if (!impl_->is_raw) {
+    if (impl_->frame_index.empty() && !impl_->frame_index_tried) {
+      // Building the index demuxes the whole file and resets the decoder, so
+      // only do it when a seek is the likely outcome anyway.
+      if (gap <= 0 || gap > kBlindForwardFrames) {
+        const auto t0 = std::chrono::steady_clock::now();
+        BuildFrameIndex();
+        last_seek_stats_.seek_io_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - t0)
+                .count();
+        index_rebuilt = true;
+      }
+    }
+
+    bool use_seek = index_rebuilt;
+    if (!use_seek && !impl_->frame_index.empty() &&
+        (size_t)target_index < impl_->frame_index.size()) {
+      int kf = -1;
+      for (int index : impl_->keyframes) {
+        if (index <= target_index) {
+          kf = index;
+        } else {
+          break;
+        }
+      }
+      const int cost_forward = gap > 0 ? gap : INT_MAX;
+      const int cost_seek =
+          kf >= 0 ? target_index - kf + kSeekOverheadFrames : INT_MAX;
+      use_seek = cost_forward > cost_seek;
+    } else if (!use_seek && impl_->frame_index.empty() &&
+               (gap <= 0 || gap > kBlindForwardFrames)) {
+      use_seek = true;
+    }
+
+    if (use_seek) {
+      seek_attempted = true;
+      if (SeekByContainer(target_index)) {
+        return true;
+      }
+      last_seek_stats_ = SeekStats();
     }
   }
 
@@ -341,47 +393,73 @@ bool FFmpegDecoder::SeekToFrame(int target_index) {
     reset();
     current_frame_ = 0;
   }
+
+  // Decode the frames before the target; ShowFrameAt decodes and converts the
+  // requested frame itself (current_frame_ counts decoded outputs, so the next
+  // decode is exactly the requested frame).
   DecodedFrame dummy;
+  const auto start_time = std::chrono::steady_clock::now();
   while (current_frame_ < target_index) {
     if (!DecodeNextFrame(dummy, false)) {
       return false;
     }
+    last_seek_stats_.frames_decoded++;
+  }
+  last_seek_stats_.decode_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - start_time)
+          .count();
+  if (gap > 0) {
+    last_seek_stats_.frames_decoded = gap;
   }
   return true;
 }
 
-bool FFmpegDecoder::BuildFramePts() {
+bool FFmpegDecoder::BuildFrameIndex() {
   if (!impl_ || impl_->is_raw || impl_->video_stream_idx < 0) {
     return false;
   }
-  impl_->frame_pts_tried = true;
+  impl_->frame_index_tried = true;
   AVStream* st = impl_->fmtCtx->streams[impl_->video_stream_idx];
   if (!st) {
     return false;
   }
 
-  std::vector<double> pts;
+  std::vector<Impl::FrameEntry> entries;
   AVPacket* pkt = av_packet_alloc();
   while (av_read_frame(impl_->fmtCtx, pkt) >= 0) {
     if (pkt->stream_index == impl_->video_stream_idx &&
         pkt->pts != AV_NOPTS_VALUE) {
-      pts.push_back(pkt->pts * av_q2d(st->time_base));
+      Impl::FrameEntry entry;
+      entry.pts = pkt->pts * av_q2d(st->time_base);
+      entry.key = (pkt->flags & AV_PKT_FLAG_KEY) != 0;
+      entries.push_back(entry);
     }
     av_packet_unref(pkt);
   }
   av_packet_free(&pkt);
 
-  // The demuxer is now at EOF; rewind for the following seek.
+  // Rewind; building the index invalidates the decoder position.
   av_seek_frame(impl_->fmtCtx, impl_->video_stream_idx, 0,
                 AVSEEK_FLAG_BACKWARD);
   avcodec_flush_buffers(impl_->codecCtx);
-  impl_->frame_pts = std::move(pts);
-  return !impl_->frame_pts.empty();
+
+  std::sort(entries.begin(), entries.end(),
+            [](const Impl::FrameEntry& a, const Impl::FrameEntry& b) {
+              return a.pts < b.pts;
+            });
+  impl_->keyframes.clear();
+  for (size_t i = 0; i < entries.size(); i++) {
+    if (entries[i].key) {
+      impl_->keyframes.push_back((int)i);
+    }
+  }
+  impl_->frame_index = std::move(entries);
+  return !impl_->frame_index.empty();
 }
 
 bool FFmpegDecoder::SeekByContainer(int target_index) {
-  if (!impl_ || !impl_->fmtCtx || impl_->video_stream_idx < 0 ||
-      frame_rate_ <= 0.0) {
+  if (!impl_ || !impl_->fmtCtx || impl_->video_stream_idx < 0) {
     return false;
   }
   AVStream* st = impl_->fmtCtx->streams[impl_->video_stream_idx];
@@ -389,19 +467,24 @@ bool FFmpegDecoder::SeekByContainer(int target_index) {
     return false;
   }
 
-  int64_t target_pts = 0;
-  if (impl_->frame_pts.empty() && !impl_->frame_pts_tried) {
-    BuildFramePts();
+  if (impl_->frame_index.empty() && !impl_->frame_index_tried) {
+    BuildFrameIndex();
   }
-  if ((size_t)target_index < impl_->frame_pts.size()) {
-    target_pts = (int64_t)std::llround(impl_->frame_pts[(size_t)target_index] /
-                                       av_q2d(st->time_base));
+
+  int64_t target_pts = 0;
+  if ((size_t)target_index < impl_->frame_index.size()) {
+    target_pts = (int64_t)std::llround(
+        impl_->frame_index[(size_t)target_index].pts / av_q2d(st->time_base));
   } else {
+    if (frame_rate_ <= 0.0) {
+      return false;
+    }
     target_pts =
         (int64_t)std::llround((double)target_index * st->time_base.den /
                               (frame_rate_ * st->time_base.num));
   }
 
+  const auto seek_start = std::chrono::steady_clock::now();
   const int seek_ret = av_seek_frame(impl_->fmtCtx, impl_->video_stream_idx,
                                      target_pts, AVSEEK_FLAG_BACKWARD);
   if (seek_ret < 0) {
@@ -409,7 +492,6 @@ bool FFmpegDecoder::SeekByContainer(int target_index) {
   }
 
   avcodec_flush_buffers(impl_->codecCtx);
-  // Drop any frames that were decoded but not consumed before the seek.
   AVFrame* stale = av_frame_alloc();
   while (avcodec_receive_frame(impl_->codecCtx, stale) >= 0) {
     av_frame_unref(stale);
@@ -417,8 +499,15 @@ bool FFmpegDecoder::SeekByContainer(int target_index) {
   av_frame_free(&stale);
   current_frame_ = 0;
 
+  const auto decode_start = std::chrono::steady_clock::now();
+  last_seek_stats_.seek_io_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(decode_start -
+                                                            seek_start)
+          .count();
+
   DecodedFrame f;
   while (DecodeNextFrame(f, false)) {
+    last_seek_stats_.frames_decoded++;
     if (f.pts == AV_NOPTS_VALUE) {
       return false;
     }  // no container timestamps
@@ -428,6 +517,11 @@ bool FFmpegDecoder::SeekByContainer(int target_index) {
       impl_->pending_index = target_index;
       impl_->has_pending = true;
       current_frame_ = target_index;
+      last_seek_stats_.used_container = true;
+      last_seek_stats_.decode_ms =
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              std::chrono::steady_clock::now() - decode_start)
+              .count();
       return true;
     }
   }

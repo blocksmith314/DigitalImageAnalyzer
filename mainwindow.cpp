@@ -876,15 +876,20 @@ void MainWindow::ShowFrameAt(int idx) {
   ShowFrame(frame.image, idx);
   if (perf) {
     const qint64 display_ms = perf_timer.elapsed();
+    const auto seek_stats =
+        jump ? player_decoder_.LastSeekStats() : FFmpegDecoder::SeekStats{};
     AppendPerf(
-        QString("%1 %2  frame=%3 total=%4ms seek=%5 decode=%6 display=%7")
+        QString("%1 %2  frame=%3 total=%4ms seek=%5 decode=%6 display=%7 "
+                "seek_frames=%8 seek_io=%9ms")
             .arg(jump ? "seek  " : "step  ")
             .arg(QFileInfo(QString::fromStdString(current_path_)).fileName())
             .arg(idx)
             .arg(seek_ms + decode_ms + display_ms)
             .arg(seek_ms)
             .arg(decode_ms)
-            .arg(display_ms));
+            .arg(display_ms)
+            .arg(seek_stats.frames_decoded)
+            .arg(seek_stats.seek_io_ms));
   }
 
   if (jump) {
