@@ -83,3 +83,46 @@ TEST(DecoderTest, RawStreamHasNoTimestamps) {
   EXPECT_EQ(frame.image.width(), 352);
   EXPECT_EQ(frame.image.height(), 288);
 }
+
+TEST(DecoderTest, ForwardSmallSeekDecodesOnlyTheGap) {
+  if (!exists(data_path("sample_720p.mp4"))) {
+    GTEST_SKIP() << "MP4 fixture missing";
+  }
+
+  FFmpegDecoder decoder;
+  ASSERT_TRUE(decoder.OpenFile(data_path("sample_720p.mp4"), CodecType::kH264))
+      << decoder.LastError();
+
+  DecodedFrame first;
+  ASSERT_TRUE(decoder.DecodeNextFrame(first));
+
+  ASSERT_TRUE(decoder.SeekToFrame(5));
+  const auto stats = decoder.LastSeekStats();
+  EXPECT_FALSE(stats.used_container);
+  EXPECT_EQ(stats.frames_decoded, 4);
+
+  DecodedFrame frame;
+  ASSERT_TRUE(decoder.DecodeNextFrame(frame));
+  EXPECT_NEAR(frame.pts_sec, 0.5, 0.01);  // 10 fps
+}
+
+TEST(DecoderTest, BackwardSeekUsesContainerSeek) {
+  if (!exists(data_path("sample_720p.mp4"))) {
+    GTEST_SKIP() << "MP4 fixture missing";
+  }
+
+  FFmpegDecoder decoder;
+  ASSERT_TRUE(decoder.OpenFile(data_path("sample_720p.mp4"), CodecType::kH264))
+      << decoder.LastError();
+
+  DecodedFrame frame;
+  for (int i = 0; i < 6; i++) {
+    ASSERT_TRUE(decoder.DecodeNextFrame(frame));
+  }
+
+  ASSERT_TRUE(decoder.SeekToFrame(2));
+  EXPECT_TRUE(decoder.LastSeekStats().used_container);
+
+  ASSERT_TRUE(decoder.DecodeNextFrame(frame));
+  EXPECT_NEAR(frame.pts_sec, 0.2, 0.01);
+}

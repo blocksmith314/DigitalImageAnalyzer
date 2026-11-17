@@ -39,6 +39,15 @@ class FFmpegDecoder {
 
   bool DecodeKeyframes(std::vector<DecodedFrame>& out, int max_frames = 10);
 
+  struct SeekStats {
+    bool used_container = false;
+    int frames_decoded = 0;
+    qint64 seek_io_ms = 0;
+    qint64 decode_ms = 0;
+  };
+
+  const SeekStats& LastSeekStats() const { return last_seek_stats_; }
+
   bool HasTimestamps() const;
   int FrameCount() const { return frame_count_; }
   int width() const { return width_; }
@@ -50,7 +59,7 @@ class FFmpegDecoder {
 
  private:
   bool ConvertFrame(const AVFrame* frame, DecodedFrame& out);
-  bool BuildFramePts();
+  bool BuildFrameIndex();
 
   struct Impl;
   Impl* impl_ = nullptr;
@@ -58,6 +67,7 @@ class FFmpegDecoder {
   int width_ = 0;
   int height_ = 0;
   int current_frame_ = 0;
+  SeekStats last_seek_stats_;
   double frame_rate_ = 30.0;
   double duration_sec_ = 0.0;
   std::string path_;
