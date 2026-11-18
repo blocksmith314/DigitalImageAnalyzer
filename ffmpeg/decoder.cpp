@@ -6,7 +6,9 @@
 #include <chrono>
 #include <climits>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+#include <thread>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -104,6 +106,22 @@ bool FFmpegDecoder::OpenFile(const std::string& path, CodecType codec) {
     close();
     return false;
   }
+
+  // Decode frames/slices in parallel. Auto thread count adapts to the host;
+  // DIA_THREADS=1 disables threading for A/B measurements.
+  int thread_count = 0;
+  int thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
+  // OpenFile is called on the GUI thread before decoding starts; getenv is
+  // only used here for an opt-out/limit during benchmarks.
+  // NOLINTNEXTLINE(concurrency-mt-unsafe)
+  if (const char* env_threads = std::getenv("DIA_THREADS")) {
+    thread_count = std::atoi(env_threads);
+    if (thread_count == 1) {
+      thread_type = 0;
+    }
+  }
+  impl_->codecCtx->thread_count = thread_count;
+  impl_->codecCtx->thread_type = thread_type;
 
   if (avcodec_open2(impl_->codecCtx, codecPtr, nullptr) < 0) {
     error_ = "Failed to open codec";
