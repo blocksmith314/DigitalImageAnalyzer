@@ -3,7 +3,9 @@
 #include <fstream>
 #include <string>
 
+#include "bitstreamparser.h"
 #include "decoder.h"
+#include "nalanalyzer.h"
 
 namespace {
 
@@ -125,4 +127,51 @@ TEST(DecoderTest, BackwardSeekUsesContainerSeek) {
 
   ASSERT_TRUE(decoder.DecodeNextFrame(frame));
   EXPECT_NEAR(frame.pts_sec, 0.2, 0.01);
+}
+
+TEST(DecoderTest, RawSeekJumpsToPreviousIdr) {
+  const std::string path = data_path("output.h264");
+  if (!exists(path)) {
+    GTEST_SKIP() << "raw fixture missing";
+  }
+
+  BitstreamParser parser(CodecType::kH264);
+  ASSERT_TRUE(parser.ParseFile(path)) << parser.LastError();
+  NALAnalyzer analyzer;
+  ASSERT_TRUE(analyzer.AnalyzeAll(parser));
+
+  std::vector<FFmpegDecoder::RawKeyframe> keyframes;
+  int64_t parameter_offset = -1;
+  for (const NALUnit& nal : parser.NalUnits()) {
+    if (nal.nal_type == 7 || nal.nal_type == 8) {
+      if (parameter_offset < 0) {
+        parameter_offset = (int64_t)nal.offset;
+      }
+    } else if (nal.nal_type == 5 && nal.frame_index >= 0) {
+      keyframes.push_back({nal.frame_index, parameter_offset >= 0
+                                                ? parameter_offset
+                                                : (int64_t)nal.offset});
+      parameter_offset = -1;
+    }
+  }
+  ASSERT_FALSE(keyframes.empty());
+
+  FFmpegDecoder decoder;
+  ASSERT_TRUE(decoder.OpenFile(path, CodecType::kH264)) << decoder.LastError();
+  decoder.SetRawKeyframeIndex(keyframes);
+
+  DecodedFrame frame;
+  QImage expected;
+  for (int i = 0; i <= 50; i++) {
+    ASSERT_TRUE(decoder.DecodeNextFrame(frame));
+    if (i == 22) {
+      expected = frame.image;
+    }
+  }
+  ASSERT_FALSE(expected.isNull());
+
+  ASSERT_TRUE(decoder.SeekToFrame(22));
+  EXPECT_TRUE(decoder.LastSeekStats().used_raw_keyframe);
+  ASSERT_TRUE(decoder.DecodeNextFrame(frame));
+  EXPECT_EQ(frame.image, expected);
 }
