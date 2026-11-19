@@ -39,14 +39,21 @@ class FFmpegDecoder {
 
   bool DecodeKeyframes(std::vector<DecodedFrame>& out, int max_frames = 10);
 
+  struct RawKeyframe {
+    int frame_index = 0;
+    int64_t byte_offset = 0;
+  };
+
   struct SeekStats {
     bool used_container = false;
+    bool used_raw_keyframe = false;
     int frames_decoded = 0;
     qint64 seek_io_ms = 0;
     qint64 decode_ms = 0;
   };
 
   const SeekStats& LastSeekStats() const { return last_seek_stats_; }
+  void SetRawKeyframeIndex(std::vector<RawKeyframe> keyframes);
 
   bool HasTimestamps() const;
   int FrameCount() const { return frame_count_; }

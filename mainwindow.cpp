@@ -732,6 +732,26 @@ void MainWindow::StartPlayer() {
     return;
   }
 
+  if (!player_decoder_.HasTimestamps()) {
+    // Raw Annex B has no container index: hand the decoder the IDR offsets so
+    // backward seeks can jump straight to the previous keyframe.
+    std::vector<FFmpegDecoder::RawKeyframe> keyframes;
+    int64_t parameter_offset = -1;
+    for (const NALUnit& nal : parser_.NalUnits()) {
+      if (nal.nal_type == 7 || nal.nal_type == 8) {
+        if (parameter_offset < 0) {
+          parameter_offset = (int64_t)nal.offset;
+        }
+      } else if (nal.nal_type == 5 && nal.frame_index >= 0) {
+        keyframes.push_back({nal.frame_index, parameter_offset >= 0
+                                                  ? parameter_offset
+                                                  : (int64_t)nal.offset});
+        parameter_offset = -1;
+      }
+    }
+    player_decoder_.SetRawKeyframeIndex(std::move(keyframes));
+  }
+
   // No upfront decode: frames are decoded on demand while playing/seeking.
   total_frames_ = (int)stats.FrameCount;
   frame_rate_ = player_decoder_.FrameRate();

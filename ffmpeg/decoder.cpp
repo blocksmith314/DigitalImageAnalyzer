@@ -36,6 +36,7 @@ struct FFmpegDecoder::Impl {
   std::vector<FrameEntry> frame_index;  // presentation order
   std::vector<int> keyframes;           // indices into frame_index
   bool frame_index_tried = false;
+  std::vector<RawKeyframe> raw_keyframes;
 };
 
 FFmpegDecoder::FFmpegDecoder() : impl_(new Impl()) {}
@@ -162,6 +163,7 @@ bool FFmpegDecoder::OpenFile(const std::string& path, CodecType codec) {
   impl_->frame_index.clear();
   impl_->keyframes.clear();
   impl_->frame_index_tried = false;
+  impl_->raw_keyframes.clear();
 
   path_ = path;
   codec_ = codec;
@@ -342,6 +344,12 @@ void FFmpegDecoder::reset() {
   }
 }
 
+void FFmpegDecoder::SetRawKeyframeIndex(std::vector<RawKeyframe> keyframes) {
+  if (impl_) {
+    impl_->raw_keyframes = std::move(keyframes);
+  }
+}
+
 bool FFmpegDecoder::SeekToFrame(int target_index) {
   last_seek_stats_ = SeekStats();
   if (!impl_ || !impl_->codecCtx || !impl_->fmtCtx) {
@@ -362,6 +370,37 @@ bool FFmpegDecoder::SeekToFrame(int target_index) {
 
   bool seek_attempted = false;
   bool index_rebuilt = false;
+
+  if (impl_->is_raw && !impl_->raw_keyframes.empty()) {
+    const RawKeyframe* keyframe = nullptr;
+    for (const RawKeyframe& entry : impl_->raw_keyframes) {
+      if (entry.frame_index <= target_index) {
+        keyframe = &entry;
+      } else {
+        break;
+      }
+    }
+    const int cost_forward = gap > 0 ? gap : INT_MAX;
+    const int cost_seek = keyframe != nullptr
+                              ? target_index - keyframe->frame_index + 2
+                              : INT_MAX;
+    if (cost_forward > cost_seek) {
+      if (keyframe != nullptr &&
+          av_seek_frame(impl_->fmtCtx, -1, keyframe->byte_offset,
+                        AVSEEK_FLAG_BYTE) >= 0) {
+        avcodec_flush_buffers(impl_->codecCtx);
+        AVFrame* stale = av_frame_alloc();
+        while (avcodec_receive_frame(impl_->codecCtx, stale) >= 0) {
+          av_frame_unref(stale);
+        }
+        av_frame_free(&stale);
+        current_frame_ = keyframe->frame_index;
+        last_seek_stats_.used_raw_keyframe = true;
+      } else {
+        seek_attempted = true;
+      }
+    }
+  }
 
   if (!impl_->is_raw) {
     if (impl_->frame_index.empty() && !impl_->frame_index_tried) {
@@ -427,9 +466,6 @@ bool FFmpegDecoder::SeekToFrame(int target_index) {
       std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::steady_clock::now() - start_time)
           .count();
-  if (gap > 0) {
-    last_seek_stats_.frames_decoded = gap;
-  }
   return true;
 }
 
