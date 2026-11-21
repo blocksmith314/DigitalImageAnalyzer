@@ -463,9 +463,11 @@ TEST(MainWindowTest, CacheServesRevisitedFrames) {
       window.LoadFile(QString::fromStdString(data_path("output.h264"))));
   QApplication::processEvents();
 
-  QTest::keyClick(&window, Qt::Key_Right);
+  auto* slider = window.findChild<QSlider*>();
+  ASSERT_NE(slider, nullptr);
+  slider->setValue(1);
   QApplication::processEvents();
-  QTest::keyClick(&window, Qt::Key_Left);
+  slider->setValue(0);
   QApplication::processEvents();
 
   auto* log = window.findChild<QPlainTextEdit*>("perfLog");
