@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Collects the executable, the Qt runtime and the MinGW/FFmpeg DLLs into a
-# self-contained folder (run inside an MSYS2 MINGW64 shell).
+# self-contained folder (run inside an MSYS2 UCRT64 shell).
 set -euo pipefail
 
 EXE="${1:?usage: bundle_windows.sh <exe> <dist>}"
@@ -23,7 +23,7 @@ copy_deps() {
       cp "$dll" "$DIST/"
       copy_deps "$DIST/$base"
     fi
-  done < <(ldd "$target" 2>/dev/null | awk '{print $3}' | grep -E '^/mingw64/bin/' | sort -u)
+  done < <(ldd "$target" 2>/dev/null | awk '{print $3}' | grep -E '^/(mingw64|ucrt64)/bin/' | sort -u)
 }
 
 copy_deps "$DIST/$BASE"
