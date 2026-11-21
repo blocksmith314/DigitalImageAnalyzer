@@ -456,9 +456,24 @@ TEST(MainWindowTest, CacheServesRevisitedFrames) {
   }
 
   QSettings().setValue("progressMode", 0);
-  QSettings().setValue("perfLogVisible", true);
   MainWindow window;
   window.show();
+  QApplication::processEvents();
+
+  // Enable the log through the UI action: QSettings defaults are not reliable
+  // in the offscreen test app on every platform.
+  for (QAction* menu_action : window.menuBar()->actions()) {
+    if (menu_action->menu() == nullptr) {
+      continue;
+    }
+    for (QAction* entry : menu_action->menu()->actions()) {
+      if (entry->text().contains("Performance log")) {
+        entry->setChecked(true);
+      }
+    }
+  }
+  QApplication::processEvents();
+
   ASSERT_TRUE(
       window.LoadFile(QString::fromStdString(data_path("output.h264"))));
   QApplication::processEvents();
