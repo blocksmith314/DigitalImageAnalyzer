@@ -57,6 +57,8 @@ qt_add_executable(DigitalImageAnalyzer
     mainwindow.cpp
     nallistmodel.h
     nallistmodel.cpp
+    framecache.h
+    framecache.cpp
 
     ${DIA_APP_ICON_SOURCES}
 
@@ -328,6 +330,7 @@ if (BUILD_TEST)
     add_executable(test_gui test/test_gui.cpp
         mainwindow.cpp
         nallistmodel.cpp
+        framecache.cpp
         ${DIA_CORE_SOURCES}
         ffmpeg/decoder.cpp
         ffmpeg/annexb.cpp

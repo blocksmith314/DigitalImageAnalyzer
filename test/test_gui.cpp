@@ -24,6 +24,7 @@
 #include <string>
 
 #include "bitstreamparser.h"
+#include "framecache.h"
 #include "mainwindow.h"
 #include "nalanalyzer.h"
 #include "nallistmodel.h"
@@ -429,4 +430,48 @@ int main(int argc, char** argv) {
   }
   QApplication app(argc, argv);
   return RUN_ALL_TESTS();
+}
+
+TEST(FrameCacheTest, EvictsLeastRecentlyUsed) {
+  FrameCache cache(900);  // room for two 10x10 RGB32 frames
+  const QImage a(10, 10, QImage::Format_RGB32);
+  const QImage b(10, 10, QImage::Format_RGB32);
+  const QImage c(10, 10, QImage::Format_RGB32);
+
+  cache.Insert(1, a, 0.1);
+  cache.Insert(2, b, 0.2);
+  ASSERT_NE(cache.Find(1), nullptr);  // touch 1, now 2 is the oldest
+  cache.Insert(3, c, 0.3);
+
+  EXPECT_EQ(cache.Find(2), nullptr);
+  EXPECT_NE(cache.Find(1), nullptr);
+  EXPECT_NE(cache.Find(3), nullptr);
+  EXPECT_GT(cache.HitCount(), 0u);
+  EXPECT_GT(cache.MissCount(), 0u);
+}
+
+TEST(MainWindowTest, CacheServesRevisitedFrames) {
+  if (!exists(data_path("output.h264"))) {
+    GTEST_SKIP() << "H.264 fixture missing";
+  }
+
+  QSettings().setValue("progressMode", 0);
+  QSettings().setValue("perfLogVisible", true);
+  MainWindow window;
+  window.show();
+  ASSERT_TRUE(
+      window.LoadFile(QString::fromStdString(data_path("output.h264"))));
+  QApplication::processEvents();
+
+  QTest::keyClick(&window, Qt::Key_Right);
+  QApplication::processEvents();
+  QTest::keyClick(&window, Qt::Key_Left);
+  QApplication::processEvents();
+
+  auto* log = window.findChild<QPlainTextEdit*>("perfLog");
+  ASSERT_NE(log, nullptr);
+  EXPECT_TRUE(log->toPlainText().contains("cache"))
+      << log->toPlainText().toStdString();
+
+  QSettings().setValue("perfLogVisible", false);
 }
