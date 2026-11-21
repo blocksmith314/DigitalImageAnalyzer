@@ -715,6 +715,8 @@ void MainWindow::UpdateStats() {
 }
 
 void MainWindow::StartPlayer() {
+  frame_cache_.Clear();
+  display_from_cache_ = false;
   auto& stats = analyzer_.stats();
   player_timer_->stop();
   is_playing_ = false;
@@ -792,6 +794,7 @@ void MainWindow::ShowFrame(const QImage& image, int frame_idx) {
     return;
   }
   current_image_ = image;
+  frame_cache_.Insert(frame_idx, image, current_pts_);
   QSize target = video_size_.isValid() ? video_size_ : video_label_->size();
   QImage scaled =
       image.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation);
@@ -860,6 +863,23 @@ void MainWindow::ShowFrameAt(int idx) {
     return;
   }
 
+  if (!is_playing_) {
+    if (const CachedFrame* cached = frame_cache_.Find(idx)) {
+      current_frame_index_ = idx;
+      current_pts_ = cached->pts_sec;
+      ShowFrame(cached->image, idx);
+      display_from_cache_ = true;
+      if (perf_log_enabled_) {
+        AppendPerf(
+            QString("cache  %1  frame=%2")
+                .arg(
+                    QFileInfo(QString::fromStdString(current_path_)).fileName())
+                .arg(idx));
+      }
+      return;
+    }
+  }
+
   const bool perf = perf_log_enabled_;
   QElapsedTimer perf_timer;
   qint64 seek_ms = 0;
@@ -869,9 +889,14 @@ void MainWindow::ShowFrameAt(int idx) {
   }
 
   // Decode sequentially when moving forward by one; otherwise seek.
+  // If the previous frame came from the cache, the decoder may be at a
+  // different position; force it to resync before decoding anything new.
+  const bool resync_needed = display_from_cache_;
+  display_from_cache_ = false;
+
   const bool jump =
       (idx < current_frame_index_ || idx > current_frame_index_ + 1);
-  if (jump) {
+  if (resync_needed || jump) {
     if (!player_decoder_.SeekToFrame(idx)) {
       return;
     }

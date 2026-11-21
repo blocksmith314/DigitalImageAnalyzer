@@ -20,6 +20,7 @@
 
 #include "bitstreamparser.h"
 #include "decoder.h"
+#include "framecache.h"
 #include "nalanalyzer.h"
 
 class AudioPlayer;
@@ -124,6 +125,8 @@ class MainWindow : public QMainWindow {
   QPlainTextEdit* perf_log_ = nullptr;
   QAction* perf_action_ = nullptr;
   bool perf_log_enabled_ = false;
+  FrameCache frame_cache_;
+  bool display_from_cache_ = false;
   ProgressMode progress_mode_ = ProgressMode::kFrames;
 
   bool is_playing_ = false;
