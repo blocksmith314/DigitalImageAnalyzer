@@ -43,6 +43,7 @@
 
 #include "annexb.h"
 #include "audio.h"
+#include "decoderservice.h"
 #include "nallistmodel.h"
 #include "version.h"
 
@@ -75,10 +76,25 @@ QString FormatDuration(double seconds) {
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), parser_(CodecType::kH264) {
+  decoder_service_ = new DecoderService();
+  decoder_service_->moveToThread(&decode_thread_);
+  connect(&decode_thread_, &QThread::finished, decoder_service_,
+          &QObject::deleteLater);
+  decode_thread_.start();
   SetupUi();
 }
 
-MainWindow::~MainWindow() = default;
+MainWindow::~MainWindow() {
+  if (decoder_service_ && decode_thread_.isRunning()) {
+    QVariantMap ignored;
+    QMetaObject::invokeMethod(decoder_service_, "Close",
+                              Qt::BlockingQueuedConnection,
+                              Q_RETURN_ARG(QVariantMap, ignored));
+    decoder_service_ = nullptr;
+  }
+  decode_thread_.quit();
+  decode_thread_.wait();
+}
 
 void MainWindow::SetupUi() {
   setWindowTitle("Digital Image Analyzer - H.264/H.265 Bitstream Analyzer");
@@ -714,6 +730,32 @@ void MainWindow::UpdateStats() {
   stats_panel_->setHtml(html);
 }
 
+QVariantMap MainWindow::OpenDecoder(const QString& path, CodecType codec,
+                                    const QVariantList& raw_keyframes) {
+  QVariantMap result;
+  QMetaObject::invokeMethod(
+      decoder_service_, "Open", Qt::BlockingQueuedConnection,
+      Q_RETURN_ARG(QVariantMap, result), Q_ARG(QString, path),
+      Q_ARG(int, (int)codec), Q_ARG(QVariantList, raw_keyframes));
+  return result;
+}
+
+QVariantMap MainWindow::SeekDecoder(int frame) {
+  QVariantMap result;
+  QMetaObject::invokeMethod(
+      decoder_service_, "Seek", Qt::BlockingQueuedConnection,
+      Q_RETURN_ARG(QVariantMap, result), Q_ARG(int, frame));
+  return result;
+}
+
+QVariantMap MainWindow::DecodeFrame() {
+  QVariantMap result;
+  QMetaObject::invokeMethod(decoder_service_, "DecodeNext",
+                            Qt::BlockingQueuedConnection,
+                            Q_RETURN_ARG(QVariantMap, result));
+  return result;
+}
+
 void MainWindow::StartPlayer() {
   frame_cache_.Clear();
   display_from_cache_ = false;
@@ -722,22 +764,8 @@ void MainWindow::StartPlayer() {
   is_playing_ = false;
   play_btn_->setText("Play");
 
-  player_decoder_.close();
-  if (!player_decoder_.OpenFile(current_path_, stats.codec)) {
-    video_label_->setText(
-        QString("Decoder error: %1").arg(player_decoder_.LastError().c_str()));
-    play_btn_->setEnabled(false);
-    stop_btn_->setEnabled(false);
-    prev_frame_btn_->setEnabled(false);
-    next_frame_btn_->setEnabled(false);
-    seek_slider_->setEnabled(false);
-    return;
-  }
-
-  if (!player_decoder_.HasTimestamps()) {
-    // Raw Annex B has no container index: hand the decoder the IDR offsets so
-    // backward seeks can jump straight to the previous keyframe.
-    std::vector<FFmpegDecoder::RawKeyframe> keyframes;
+  QVariantList raw_keyframes;
+  if (stats.codec == CodecType::kH264 || stats.codec == CodecType::kH265) {
     int64_t parameter_offset = -1;
     for (const NALUnit& nal : parser_.NalUnits()) {
       if (nal.nal_type == 7 || nal.nal_type == 8) {
@@ -745,19 +773,34 @@ void MainWindow::StartPlayer() {
           parameter_offset = (int64_t)nal.offset;
         }
       } else if (nal.nal_type == 5 && nal.frame_index >= 0) {
-        keyframes.push_back({nal.frame_index, parameter_offset >= 0
-                                                  ? parameter_offset
-                                                  : (int64_t)nal.offset});
+        raw_keyframes << nal.frame_index
+                      << QVariant::fromValue<qlonglong>(
+                             parameter_offset >= 0 ? parameter_offset
+                                                   : (int64_t)nal.offset);
         parameter_offset = -1;
       }
     }
-    player_decoder_.SetRawKeyframeIndex(std::move(keyframes));
   }
+
+  const QVariantMap open_result = OpenDecoder(
+      QString::fromStdString(current_path_), stats.codec, raw_keyframes);
+  if (!open_result.value("ok").toBool()) {
+    video_label_->setText(QString("Decoder error: %1")
+                              .arg(open_result.value("error").toString()));
+    play_btn_->setEnabled(false);
+    stop_btn_->setEnabled(false);
+    prev_frame_btn_->setEnabled(false);
+    next_frame_btn_->setEnabled(false);
+    seek_slider_->setEnabled(false);
+    return;
+  }
+  has_timestamps_ = open_result.value("has_timestamps").toBool();
+  duration_sec_ = open_result.value("duration").toDouble();
 
   // No upfront decode: frames are decoded on demand while playing/seeking.
   total_frames_ = (int)stats.FrameCount;
-  frame_rate_ = player_decoder_.FrameRate();
-  if (!player_decoder_.HasTimestamps()) {
+  frame_rate_ = open_result.value("frame_rate").toDouble();
+  if (!has_timestamps_) {
     // Raw Annex B has no container timing; prefer the SPS VUI frame rate.
     const double vui_fps = SpsFrameRate();
     if (vui_fps > 0.0) {
@@ -820,8 +863,8 @@ void MainWindow::UpdatePositionLabel() {
   }
 
   if (progress_mode_ == ProgressMode::kTime) {
-    const bool has_timestamps = player_decoder_.HasTimestamps();
-    double total = player_decoder_.DurationSec();
+    const bool has_timestamps = has_timestamps_;
+    double total = duration_sec_;
     if (total <= 0.0 && frame_rate_ > 0.0) {
       total = total_frames_ / frame_rate_;
     }
@@ -897,16 +940,25 @@ void MainWindow::ShowFrameAt(int idx) {
   const bool jump =
       (idx < current_frame_index_ || idx > current_frame_index_ + 1);
   if (resync_needed || jump) {
-    if (!player_decoder_.SeekToFrame(idx)) {
+    const QVariantMap seek_result = SeekDecoder(idx);
+    if (!seek_result.value("ok").toBool()) {
       return;
     }
+    last_seek_stats_.used_container =
+        seek_result.value("used_container").toBool();
+    last_seek_stats_.used_raw_keyframe =
+        seek_result.value("used_raw_keyframe").toBool();
+    last_seek_stats_.frames_decoded =
+        seek_result.value("frames_decoded").toInt();
+    last_seek_stats_.seek_io_ms = seek_result.value("seek_io_ms").toLongLong();
+    last_seek_stats_.decode_ms = seek_result.value("decode_ms").toLongLong();
     if (perf) {
       seek_ms = perf_timer.restart();
     }
   }
 
-  DecodedFrame frame;
-  if (!player_decoder_.DecodeNextFrame(frame)) {
+  const QVariantMap decode_result = DecodeFrame();
+  if (!decode_result.value("ok").toBool()) {
     // End of decodable frames (container may have fewer than the NAL count).
     player_timer_->stop();
     is_playing_ = false;
@@ -917,12 +969,12 @@ void MainWindow::ShowFrameAt(int idx) {
     decode_ms = perf_timer.restart();
   }
   current_frame_index_ = idx;
-  current_pts_ = frame.pts_sec;
-  ShowFrame(frame.image, idx);
+  current_pts_ = decode_result.value("pts").toDouble();
+  ShowFrame(decode_result.value("image").value<QImage>(), idx);
   if (perf) {
     const qint64 display_ms = perf_timer.elapsed();
     const auto seek_stats =
-        jump ? player_decoder_.LastSeekStats() : FFmpegDecoder::SeekStats{};
+        jump ? last_seek_stats_ : FFmpegDecoder::SeekStats{};
     AppendPerf(
         QString("%1 %2  frame=%3 total=%4ms seek=%5 decode=%6 display=%7 "
                 "seek_frames=%8 seek_io=%9ms")
@@ -943,7 +995,7 @@ void MainWindow::ShowFrameAt(int idx) {
     play_clock_.restart();
     if (audio_ && audio_->HasAudio()) {
       const double seconds =
-          player_decoder_.HasTimestamps() && frame_rate_ > 0.0
+          has_timestamps_ && frame_rate_ > 0.0
               ? current_pts_
               : (frame_rate_ > 0.0 ? (double)idx / frame_rate_ : 0.0);
       audio_->SeekTo(seconds);
@@ -981,8 +1033,7 @@ void MainWindow::OnPlayPause() {
     has_pending_ = false;
     clock_start_pts_ = current_pts_;
     play_clock_.start();
-    player_timer_->start(player_decoder_.HasTimestamps() ? 5
-                                                         : PlayerIntervalMs());
+    player_timer_->start(has_timestamps_ ? 5 : PlayerIntervalMs());
     play_btn_->setText("Pause");
     is_playing_ = true;
     if (audio_) {
@@ -1017,8 +1068,7 @@ void MainWindow::OnSpeedChanged(int index) {
   if (is_playing_) {
     clock_start_pts_ = current_pts_;
     play_clock_.restart();
-    player_timer_->start(player_decoder_.HasTimestamps() ? 5
-                                                         : PlayerIntervalMs());
+    player_timer_->start(has_timestamps_ ? 5 : PlayerIntervalMs());
   }
 }
 
@@ -1073,7 +1123,7 @@ void MainWindow::OnPlayerTick() {
   }
 
   // Raw streams have no container timestamps: fall back to the fixed timer.
-  if (!player_decoder_.HasTimestamps()) {
+  if (!has_timestamps_) {
     if (current_frame_index_ + 1 >= total_frames_) {
       StopPlayback();
       return;
@@ -1083,10 +1133,13 @@ void MainWindow::OnPlayerTick() {
   }
 
   if (!has_pending_) {
-    if (!player_decoder_.DecodeNextFrame(pending_frame_)) {
+    const QVariantMap result = DecodeFrame();
+    if (!result.value("ok").toBool()) {
       StopPlayback();
       return;
     }
+    pending_frame_.image = result.value("image").value<QImage>();
+    pending_frame_.pts_sec = result.value("pts").toDouble();
     has_pending_ = true;
   }
 
