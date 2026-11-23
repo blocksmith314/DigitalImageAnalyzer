@@ -14,8 +14,11 @@
 #include <QStatusBar>
 #include <QStringList>
 #include <QTextBrowser>
+#include <QThread>
 #include <QTimer>
 #include <QTreeWidget>
+#include <QVariantList>
+#include <QVariantMap>
 #include <unordered_map>
 
 #include "bitstreamparser.h"
@@ -24,6 +27,7 @@
 #include "nalanalyzer.h"
 
 class AudioPlayer;
+class DecoderService;
 class NalListModel;
 class QDockWidget;
 class QPlainTextEdit;
@@ -87,11 +91,19 @@ class MainWindow : public QMainWindow {
   void StopPlayback();
   void HighlightFrame(int frame_idx);
   int PlayerIntervalMs() const;
+  QVariantMap OpenDecoder(const QString& path, CodecType codec,
+                          const QVariantList& raw_keyframes);
+  QVariantMap SeekDecoder(int frame);
+  QVariantMap DecodeFrame();
 
   BitstreamParser parser_;
   NALAnalyzer analyzer_;
   FFmpegDecoder decoder_;
-  FFmpegDecoder player_decoder_;
+  DecoderService* decoder_service_ = nullptr;
+  QThread decode_thread_;
+  bool has_timestamps_ = false;
+  double duration_sec_ = 0.0;
+  FFmpegDecoder::SeekStats last_seek_stats_;
   AudioPlayer* audio_ = nullptr;
   std::string current_path_;
 
