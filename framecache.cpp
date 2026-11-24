@@ -1,5 +1,6 @@
 #include "framecache.h"
 
+#include <cstdlib>
 #include <utility>
 
 FrameCache::FrameCache(std::size_t limit_bytes) : limit_bytes_(limit_bytes) {}
@@ -13,6 +14,19 @@ void FrameCache::Clear() {
   entries_.clear();
   lru_.clear();
   bytes_ = 0;
+}
+
+const CachedFrame* FrameCache::Nearest(int index) const {
+  const CachedFrame* best = nullptr;
+  int best_distance = 0;
+  for (auto it = entries_.begin(); it != entries_.end(); ++it) {
+    const int distance = std::abs(it.key() - index);
+    if (best == nullptr || distance < best_distance) {
+      best = &it->frame;
+      best_distance = distance;
+    }
+  }
+  return best;
 }
 
 const CachedFrame* FrameCache::Find(int index) {
