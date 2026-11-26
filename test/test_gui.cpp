@@ -341,11 +341,11 @@ TEST(MainWindowTest, StepForwardUsesSpinBoxValue) {
 
   QLabel* label = frameLabel(window);
   ASSERT_NE(label, nullptr);
-  QTRY_COMPARE(label->text(), QString("Frame: 4 / 10"));
+  EXPECT_EQ(label->text(), "Frame: 4 / 10");
 
   auto* slider = window.findChild<QSlider*>();
   ASSERT_NE(slider, nullptr);
-  QTRY_COMPARE(slider->value(), 3);
+  EXPECT_EQ(slider->value(), 3);
 }
 
 TEST(MainWindowTest, SpaceTogglesPlayback) {
@@ -487,7 +487,8 @@ TEST(MainWindowTest, CacheServesRevisitedFrames) {
 
   auto* log = window.findChild<QPlainTextEdit*>("perfLog");
   ASSERT_NE(log, nullptr);
-  QTRY_VERIFY(log->toPlainText().contains("cache"));
+  EXPECT_TRUE(log->toPlainText().contains("cache"))
+      << log->toPlainText().toStdString();
 
   QSettings().setValue("perfLogVisible", false);
 }

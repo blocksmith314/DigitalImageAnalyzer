@@ -62,11 +62,7 @@ class MainWindow : public QMainWindow {
   void ShowAbout();
   void ShowShortcuts();
   void UpdatePositionLabel();
-  void ShowFirstFrameBlocking();
   void SetPerfLogVisible(bool visible);
-  void OnSeekPreview(const QVariantMap& result);
-  void OnSeekFrameReady(const QVariantMap& result);
-  void OnSeekFailed(const QVariantMap& result);
 
  private:
   enum class ProgressMode { kFrames, kTime };
@@ -107,6 +103,7 @@ class MainWindow : public QMainWindow {
   QThread decode_thread_;
   bool has_timestamps_ = false;
   double duration_sec_ = 0.0;
+  FFmpegDecoder::SeekStats last_seek_stats_;
   AudioPlayer* audio_ = nullptr;
   std::string current_path_;
 
@@ -140,11 +137,8 @@ class MainWindow : public QMainWindow {
   QPlainTextEdit* perf_log_ = nullptr;
   QAction* perf_action_ = nullptr;
   bool perf_log_enabled_ = false;
-  quint64 seek_generation_ = 0;
-  int pending_seek_frame_ = -1;
-  bool pending_seek_jump_ = false;
-  bool seek_pending_ = false;
-  QElapsedTimer seek_request_timer_;
+  FrameCache frame_cache_;
+  bool display_from_cache_ = false;
   ProgressMode progress_mode_ = ProgressMode::kFrames;
 
   bool is_playing_ = false;
