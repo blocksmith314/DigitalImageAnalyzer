@@ -21,6 +21,7 @@ class FrameCache {
   void SetLimitBytes(std::size_t limit_bytes);
   void Clear();
   const CachedFrame* Find(int index);
+  const CachedFrame* Nearest(int index) const;
   void Insert(int index, const QImage& image, double pts_sec);
 
   std::size_t CurrentBytes() const { return bytes_; }

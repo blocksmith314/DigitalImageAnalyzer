@@ -81,6 +81,12 @@ MainWindow::MainWindow(QWidget* parent)
   connect(&decode_thread_, &QThread::finished, decoder_service_,
           &QObject::deleteLater);
   decode_thread_.start();
+  connect(decoder_service_, &DecoderService::PreviewReady, this,
+          &MainWindow::OnSeekPreview, Qt::QueuedConnection);
+  connect(decoder_service_, &DecoderService::FrameReady, this,
+          &MainWindow::OnSeekFrameReady, Qt::QueuedConnection);
+  connect(decoder_service_, &DecoderService::SeekFailed, this,
+          &MainWindow::OnSeekFailed, Qt::QueuedConnection);
   SetupUi();
 }
 
@@ -757,8 +763,6 @@ QVariantMap MainWindow::DecodeFrame() {
 }
 
 void MainWindow::StartPlayer() {
-  frame_cache_.Clear();
-  display_from_cache_ = false;
   auto& stats = analyzer_.stats();
   player_timer_->stop();
   is_playing_ = false;
@@ -829,7 +833,7 @@ void MainWindow::StartPlayer() {
 
   video_size_ = video_label_->size();
   current_frame_index_ = -1;
-  ShowFrameAt(0);
+  ShowFirstFrameBlocking();
 }
 
 void MainWindow::ShowFrame(const QImage& image, int frame_idx) {
@@ -837,7 +841,6 @@ void MainWindow::ShowFrame(const QImage& image, int frame_idx) {
     return;
   }
   current_image_ = image;
-  frame_cache_.Insert(frame_idx, image, current_pts_);
   QSize target = video_size_.isValid() ? video_size_ : video_label_->size();
   QImage scaled =
       image.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation);
@@ -906,90 +909,89 @@ void MainWindow::ShowFrameAt(int idx) {
     return;
   }
 
-  if (!is_playing_) {
-    if (const CachedFrame* cached = frame_cache_.Find(idx)) {
-      current_frame_index_ = idx;
-      current_pts_ = cached->pts_sec;
-      ShowFrame(cached->image, idx);
-      display_from_cache_ = true;
-      if (perf_log_enabled_) {
-        AppendPerf(
-            QString("cache  %1  frame=%2")
-                .arg(
-                    QFileInfo(QString::fromStdString(current_path_)).fileName())
-                .arg(idx));
-      }
-      return;
-    }
-  }
-
-  const bool perf = perf_log_enabled_;
-  QElapsedTimer perf_timer;
-  qint64 seek_ms = 0;
-  qint64 decode_ms = 0;
-  if (perf) {
-    perf_timer.start();
-  }
-
-  // Decode sequentially when moving forward by one; otherwise seek.
-  // If the previous frame came from the cache, the decoder may be at a
-  // different position; force it to resync before decoding anything new.
-  const bool resync_needed = display_from_cache_;
-  display_from_cache_ = false;
-
-  const bool jump =
+  pending_seek_frame_ = idx;
+  pending_seek_jump_ =
       (idx < current_frame_index_ || idx > current_frame_index_ + 1);
-  if (resync_needed || jump) {
-    const QVariantMap seek_result = SeekDecoder(idx);
-    if (!seek_result.value("ok").toBool()) {
-      return;
-    }
-    last_seek_stats_.used_container =
-        seek_result.value("used_container").toBool();
-    last_seek_stats_.used_raw_keyframe =
-        seek_result.value("used_raw_keyframe").toBool();
-    last_seek_stats_.frames_decoded =
-        seek_result.value("frames_decoded").toInt();
-    last_seek_stats_.seek_io_ms = seek_result.value("seek_io_ms").toLongLong();
-    last_seek_stats_.decode_ms = seek_result.value("decode_ms").toLongLong();
-    if (perf) {
-      seek_ms = perf_timer.restart();
-    }
+  seek_pending_ = true;
+  const quint64 generation = ++seek_generation_;
+  if (perf_log_enabled_) {
+    seek_request_timer_.start();
   }
+  QMetaObject::invokeMethod(decoder_service_, "RequestSeek",
+                            Qt::QueuedConnection, Q_ARG(int, idx),
+                            Q_ARG(quint64, generation));
+}
 
-  const QVariantMap decode_result = DecodeFrame();
-  if (!decode_result.value("ok").toBool()) {
-    // End of decodable frames (container may have fewer than the NAL count).
-    player_timer_->stop();
-    is_playing_ = false;
-    play_btn_->setText("Play");
+void MainWindow::ShowFirstFrameBlocking() {
+  if (total_frames_ <= 0 || !decoder_service_) {
     return;
   }
-  if (perf) {
-    decode_ms = perf_timer.restart();
+  const QVariantMap seek_result = SeekDecoder(0);
+  if (!seek_result.value("ok").toBool()) {
+    return;
   }
-  current_frame_index_ = idx;
+  const QVariantMap decode_result = DecodeFrame();
+  if (!decode_result.value("ok").toBool()) {
+    return;
+  }
+  current_frame_index_ = 0;
   current_pts_ = decode_result.value("pts").toDouble();
-  ShowFrame(decode_result.value("image").value<QImage>(), idx);
-  if (perf) {
-    const qint64 display_ms = perf_timer.elapsed();
-    const auto seek_stats =
-        jump ? last_seek_stats_ : FFmpegDecoder::SeekStats{};
-    AppendPerf(
-        QString("%1 %2  frame=%3 total=%4ms seek=%5 decode=%6 display=%7 "
-                "seek_frames=%8 seek_io=%9ms")
-            .arg(jump ? "seek  " : "step  ")
-            .arg(QFileInfo(QString::fromStdString(current_path_)).fileName())
-            .arg(idx)
-            .arg(seek_ms + decode_ms + display_ms)
-            .arg(seek_ms)
-            .arg(decode_ms)
-            .arg(display_ms)
-            .arg(seek_stats.frames_decoded)
-            .arg(seek_stats.seek_io_ms));
+  ShowFrame(decode_result.value("image").value<QImage>(), 0);
+}
+
+void MainWindow::OnSeekPreview(const QVariantMap& result) {
+  if (result.value("generation").toULongLong() != seek_generation_) {
+    return;
+  }
+  const QImage image = result.value("image").value<QImage>();
+  if (image.isNull() || !video_label_) {
+    return;
+  }
+  QSize target = video_size_.isValid() ? video_size_ : video_label_->size();
+  video_label_->setPixmap(QPixmap::fromImage(
+      image.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
+}
+
+void MainWindow::OnSeekFrameReady(const QVariantMap& result) {
+  if (result.value("generation").toULongLong() != seek_generation_) {
+    return;
+  }
+  const int idx = result.value("target").toInt();
+  const QImage image = result.value("image").value<QImage>();
+  if (image.isNull()) {
+    seek_pending_ = false;
+    return;
   }
 
-  if (jump) {
+  const bool from_cache = result.value("from_cache").toBool();
+  const qint64 total_ms =
+      seek_request_timer_.isValid() ? seek_request_timer_.elapsed() : 0;
+  seek_pending_ = false;
+  current_frame_index_ = idx;
+  current_pts_ = result.value("pts").toDouble();
+  ShowFrame(image, idx);
+
+  if (perf_log_enabled_) {
+    if (from_cache) {
+      AppendPerf(
+          QString("cache  %1  frame=%2")
+              .arg(QFileInfo(QString::fromStdString(current_path_)).fileName())
+              .arg(idx));
+    } else {
+      AppendPerf(
+          QString("%1 %2  frame=%3 total=%4ms seek_io=%5ms seek_decode=%6ms "
+                  "seek_frames=%7")
+              .arg(pending_seek_jump_ ? "seek  " : "step  ")
+              .arg(QFileInfo(QString::fromStdString(current_path_)).fileName())
+              .arg(idx)
+              .arg(total_ms)
+              .arg(result.value("seek_io_ms").toLongLong())
+              .arg(result.value("decode_ms").toLongLong())
+              .arg(result.value("frames_decoded").toInt()));
+    }
+  }
+
+  if (pending_seek_jump_) {
     has_pending_ = false;
     clock_start_pts_ = current_pts_;
     play_clock_.restart();
@@ -1000,6 +1002,16 @@ void MainWindow::ShowFrameAt(int idx) {
               : (frame_rate_ > 0.0 ? (double)idx / frame_rate_ : 0.0);
       audio_->SeekTo(seconds);
     }
+  }
+}
+
+void MainWindow::OnSeekFailed(const QVariantMap& result) {
+  if (result.value("generation").toULongLong() != seek_generation_) {
+    return;
+  }
+  seek_pending_ = false;
+  if (is_playing_) {
+    StopPlayback();
   }
 }
 
@@ -1124,6 +1136,9 @@ void MainWindow::OnPlayerTick() {
 
   // Raw streams have no container timestamps: fall back to the fixed timer.
   if (!has_timestamps_) {
+    if (seek_pending_) {
+      return;
+    }
     if (current_frame_index_ + 1 >= total_frames_) {
       StopPlayback();
       return;
