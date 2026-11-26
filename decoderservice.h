@@ -7,7 +7,6 @@
 #include <memory>
 
 #include "decoder.h"
-#include "framecache.h"
 
 // Owns the FFmpegDecoder and lives in a worker thread. Callers use blocking
 // invocations for now; asynchronous seek/preview will be layered on top.
@@ -22,16 +21,9 @@ class DecoderService : public QObject {
   QVariantMap Close();
   QVariantMap Seek(int frame);
   QVariantMap DecodeNext();
-  void RequestSeek(int frame, quint64 generation);
-
- signals:
-  void PreviewReady(QVariantMap result);
-  void FrameReady(QVariantMap result);
-  void SeekFailed(QVariantMap result);
 
  private:
   std::unique_ptr<FFmpegDecoder> decoder_;
-  FrameCache cache_;
 };
 
 #endif  // DIA_DECODERSERVICE_H_
